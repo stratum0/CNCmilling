@@ -239,14 +239,14 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
 
         minimum = 999999999
         start = None
-        for q in (
-                distance_strata[int(distance_to_cut)] +
-                distance_strata[int(distance_to_cut) + 1] +
-                distance_strata[int(distance_to_cut) + 2]):
-            pdist = distance_data[q]
-            if pdist >= distance_to_cut and pdist < minimum and pdist < distance_to_cut + 2:
-                start = (q % distance_width, q // distance_width)
-                minimum = pdist
+        for i in [0, 1, 2]:
+            for q in distance_strata[int(distance_to_cut) + i]:
+                pdist = distance_data[q]
+                if pdist >= distance_to_cut and pdist < minimum and pdist < distance_to_cut + 2:
+                    start = (q % distance_width, q // distance_width)
+                    minimum = pdist
+                    break
+            if start:
                 break
         
         if not start:
