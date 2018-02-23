@@ -158,7 +158,7 @@ def applyTool(state, distance, cut_depth, shape, pos):
 
     for n in NEIGHBOURS_AND_SELF:
         p = (pos[0] + n[0], pos[1] + n[1])
-        distance.putpixel(p, (0, None))
+        distance.putpixel(p, 0)
 
     return useful
 
@@ -221,22 +221,29 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
 
     for p in all_coords:
         sqrdist = distance_data[p[0] + distance_width * p[1]]
-        distance_data[p[0] + distance_width * p[1]] = (sqrdist[0] ** 0.5, sqrdist[1])
+        distance_data[p[0] + distance_width * p[1]] = sqrdist[0] ** 0.5
 
     distance_to_cut = (diameter / 2) / args.precision
-    print(distance_to_cut, distance_to_cut + 2)
     any_at_distance = False
 
     trace = 0
     all_idx = list(map(lambda c: c[0] + distance_width * c[1], all_coords))
+    distance_strata = list(map(lambda i: [], range(0, max(distance_width, distance.height) + 3)))
+    for q in all_idx:
+        d = int(distance_data[q])
+        distance_strata[d].append(q)
+
     while True:
         trace = trace + 1
         print("Computing trace", trace)
 
         minimum = 999999999
         start = None
-        for q in all_idx:
-            pdist = distance_data[q][0]
+        for q in (
+                distance_strata[int(distance_to_cut)] +
+                distance_strata[int(distance_to_cut) + 1] +
+                distance_strata[int(distance_to_cut) + 2]):
+            pdist = distance_data[q]
             if pdist >= distance_to_cut and pdist < minimum and pdist < distance_to_cut + 2:
                 start = (q % distance_width, q // distance_width)
                 minimum = pdist
@@ -270,7 +277,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
             minimum = 999999999
             for offset in NEIGHBOURS2:
                 p = (pos[0] + offset[0], pos[1] + offset[1])
-                pdist = distance_data[p[0] + distance_width * p[1]][0]
+                pdist = distance_data[p[0] + distance_width * p[1]]
                 if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
                     step = p
                     minimum = pdist
