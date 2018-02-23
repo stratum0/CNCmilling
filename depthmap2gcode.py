@@ -163,46 +163,65 @@ def applyTool(state, distance, cut_depth, shape, pos):
     return useful
 
 
+def buildDistanceMap(distance, all_coords):
+    # So performance, much wow...
+    distance_data = distance.data
+    distance_width = distance.width
+    distance_height = distance.height
+
+    to_check = set(all_coords)
+    while to_check:
+        if len(to_check) % 1000 == 0:
+            print("\x1B[1G...", len(to_check), "  \x1B[1F")
+        p = to_check.pop()
+        nearest = distance_data[p[0] + distance_width * p[1]][1]
+        if not nearest:
+            continue
+
+        for d in NEIGHBOURS:
+            x = p[0] + d[0]
+            y = p[1] + d[1]
+            if(x < 0 or x >= distance_width or
+                y < 0 or y >= distance_height):
+                continue
+
+            dx = (nearest[0] - x)
+            dy = (nearest[1] - y)
+            distP = dx * dx + dy * dy
+            idx = x + distance_width * y
+
+            if distP < distance_data[idx][0]:
+                distance_data[idx] = (distP, nearest)
+                to_check.add((x, y))
+
+
 def generateSweep(target, state, args, diameter, out, image_cutoff, z):
+    all_coords = [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]
+
     distance = DistanceImage(Image.new('I', target.size))
-    for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
+    # So performance, much wow...
+    distance_data = distance.data
+    distance_width = distance.width
+
+    for p in all_coords:
         t = target.getpixel(p)
         s = state.getpixel(p)
         if(t >= image_cutoff or
             p[0] <= 0 or p[0] >= state.size[0] - 1 or
             p[1] <= 0 or p[1] >= state.size[1] - 1):
-            distance.putpixel(p, (0, p))
+            distance_data[p[0] + distance_width * p[1]] = (0, p)
         else:
-            distance.putpixel(p, (999999999, None))
+            distance_data[p[0] + distance_width * p[1]] = (999999999, None)
 
-    to_check = set((x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1]))
-    while to_check:
-        if len(to_check) % 1000 == 0:
-            print("\x1B[1G...", len(to_check), "  \x1B[1F")
-        p = to_check.pop()
-        nearest = distance.getpixel(p)[1]
-        if not nearest:
-            continue
-
-        for d in NEIGHBOURS:
-            pd = (p[0] + d[0], p[1] + d[1])
-            if(pd[0] < 0 or pd[0] >= distance.size[0] or
-                pd[1] < 0 or pd[1] >= distance.size[1]):
-                continue
-
-            distP = (nearest[0] - pd[0]) ** 2 + (nearest[1] - pd[1]) ** 2
-
-            if distP < distance.getpixel(pd)[0]:
-                distance.putpixel(pd, (distP, nearest))
-                to_check.add(pd)
+    buildDistanceMap(distance, all_coords)
 
     tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_inner = sorted(toolPixels(args, diameter - args.overlap), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_edge = sorted(toolEdge(tool_shape), key=lambda p: p[0] * p[0] + p[1] * p[1])
 
-    for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
-        sqrdist = distance.getpixel(p)
-        distance.putpixel(p, (sqrdist[0] ** 0.5, sqrdist[1]))
+    for p in all_coords:
+        sqrdist = distance_data[p[0] + distance_width * p[1]]
+        distance_data[p[0] + distance_width * p[1]] = (sqrdist[0] ** 0.5, sqrdist[1])
 
     distance_to_cut = (diameter / 2) / args.precision
     print(distance_to_cut, distance_to_cut + 2)
@@ -215,8 +234,8 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
 
         minimum = 999999999
         start = None
-        for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
-            pdist = distance.getpixel(p)[0]
+        for p in all_coords:
+            pdist = distance_data[p[0] + distance_width * p[1]][0]
             if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
                 start = p
                 minimum = pdist
@@ -229,6 +248,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
             else:
                 any_at_distance = False
                 distance_to_cut += (diameter / 2 - args.overlap) / args.precision
+                trace = trace - 1
                 continue
 
         any_at_distance = True
@@ -249,7 +269,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
             minimum = 999999999
             for offset in NEIGHBOURS2:
                 p = (pos[0] + offset[0], pos[1] + offset[1])
-                pdist = distance.getpixel(p)[0]
+                pdist = distance_data[p[0] + distance_width * p[1]][0]
                 if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
                     step = p
                     minimum = pdist
