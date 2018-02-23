@@ -6,8 +6,10 @@ from decimal import Decimal
 from PIL import Image
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
+NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3)]
 
-class PythonImage:
+class PythonImage(object):
     def __init__(self, img):
         self.img = img
         self.size = img.size
@@ -28,6 +30,20 @@ class PythonImage:
     def show(self):
         self.img.putdata(self.data)
         return self.img.show()
+
+
+class DistanceImage(PythonImage):
+    def show(self, height):
+        img = Image.new('RGB', self.size)
+        for p in [(x, y) for x in range(0, self.img.size[0]) for y in range(0, self.img.size[1])]:
+            dist = self.getpixel(p)[0]
+            col = (
+                int(dist),
+                255 if dist > 14 and dist < 16 else 0,
+                255 if dist > height and dist < height + 2 else 0,
+            )
+            img.putpixel(p, col)
+        img.show()
 
 
 def formatFloat(args, f):
@@ -125,82 +141,100 @@ def toolFits(target, image_cutoff, tool_shape, position):
     return True
 
 
-def applyTool(state, distance, cut_depth, shape, inner, pos):
+def applyTool(state, distance, cut_depth, shape, pos):
     useful = False
     depth = int(cut_depth)
 
     for t in shape:
         p = (pos[0] + t[0], pos[1] + t[1])
+        if(p[0] < 0 or p[0] >= state.size[0] or
+                p[1] < 0 or p[1] >= state.size[1]):
+            continue
+
         state_old = state.getpixel(p)
         if depth < state_old:
             state.putpixel(p, depth)
             useful = True
 
-    for i in inner:
-        p = (pos[0] + t[0], pos[1] + t[1])
-        distance_old = distance.getpixel(p)
-        if distance_old != 0:
-            distance.putpixel(p, 0)
+    for n in NEIGHBOURS_AND_SELF:
+        p = (pos[0] + n[0], pos[1] + n[1])
+        distance.putpixel(p, (0, None))
 
     return useful
 
 
 def generateSweep(target, state, args, diameter, out, image_cutoff, z):
-    distance = PythonImage(Image.new('I', target.size, 999999999))
+    distance = DistanceImage(Image.new('I', target.size))
     for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
         t = target.getpixel(p)
         s = state.getpixel(p)
-        if t >= image_cutoff or t > s:
-            distance.putpixel(p, 0)
+        if(t >= image_cutoff or
+            p[0] <= 0 or p[0] >= state.size[0] - 1 or
+            p[1] <= 0 or p[1] >= state.size[1] - 1):
+            distance.putpixel(p, (0, p))
+        else:
+            distance.putpixel(p, (999999999, None))
 
     to_check = set((x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1]))
     while to_check:
         if len(to_check) % 1000 == 0:
             print("\x1B[1G...", len(to_check), "  \x1B[1F")
         p = to_check.pop()
+        nearest = distance.getpixel(p)[1]
+        if not nearest:
+            continue
+
         for d in NEIGHBOURS:
             pd = (p[0] + d[0], p[1] + d[1])
             if(pd[0] < 0 or pd[0] >= distance.size[0] or
                 pd[1] < 0 or pd[1] >= distance.size[1]):
                 continue
 
-            if distance.getpixel(pd) > distance.getpixel(p) + 1:
-                distance.putpixel(pd, distance.getpixel(p) + 1)
+            distP = (nearest[0] - pd[0]) ** 2 + (nearest[1] - pd[1]) ** 2
+
+            if distP < distance.getpixel(pd)[0]:
+                distance.putpixel(pd, (distP, nearest))
                 to_check.add(pd)
 
     tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_inner = sorted(toolPixels(args, diameter - args.overlap), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_edge = sorted(toolEdge(tool_shape), key=lambda p: p[0] * p[0] + p[1] * p[1])
-    tool_region = sorted(tool_shape + tool_edge, key=lambda p: p[0] * p[0] + p[1] * p[1])
-    # print("tool inner:", tool_inner)
-    # print("tool shape:", tool_shape)
-    # print("tool edge:", tool_edge)
+
+    for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
+        sqrdist = distance.getpixel(p)
+        distance.putpixel(p, (sqrdist[0] ** 0.5, sqrdist[1]))
+
+    distance_to_cut = (diameter / 2) / args.precision
+    print(distance_to_cut, distance_to_cut + 2)
+    any_at_distance = False
 
     trace = 0
     while True:
         trace = trace + 1
         print("Computing trace", trace)
 
-        maximum = 0
+        minimum = 999999999
         start = None
         for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
-            if distance.getpixel(p) > maximum:
-                for t in tool_inner:
-                    if toolFits(target, image_cutoff, reversed(tool_shape), (p[0] - t[0], p[1] - t[1])):
-                        maximum = distance.getpixel(p)
-                        start = (p[0] - t[0], p[1] - t[1])
-                        break
-                else:
-                    distance.putpixel(p, 0)
+            pdist = distance.getpixel(p)[0]
+            if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
+                start = p
+                minimum = pdist
+                break
         
         if not start:
-            print("... nothing to do")
-            break
+            if not any_at_distance:
+                print("... nothing to do")
+                break
+            else:
+                any_at_distance = False
+                distance_to_cut += (diameter / 2 - args.overlap) / args.precision
+                continue
 
-        unreachable = set()
+        any_at_distance = True
 
         pos = start
-        useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
+        useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, pos)
         trace_steps = []
         trace_steps.append({
             'x': formatFloat(args, start[0] * args.precision),
@@ -211,44 +245,24 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
             if len(trace_steps) % 1000 == 0:
                 print("\x1B[1G...", len(trace_steps), "  \x1B[1F")
 
-            minimum = 999999999
             step = None
-            for offset in tool_region:
+            minimum = 999999999
+            for offset in NEIGHBOURS2:
                 p = (pos[0] + offset[0], pos[1] + offset[1])
-                if p in unreachable:
-                    continue
-                if(p[0] < 0 or p[0] >= target.size[0] or
-                        p[1] < 0 or p[1] >= target.size[1]):
-                    unreachable.add(p)
-                    continue
-
-                dist = distance.getpixel(p)
-                if dist > 0 and dist < minimum:
-                    minimum = dist
+                pdist = distance.getpixel(p)[0]
+                if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
                     step = p
+                    minimum = pdist
+                    break
 
             if not step:
                 break
 
-            minimum = (step[0] - pos[0]) ** 2 + (step[1] - pos[1]) ** 2
-            next_pos = None
-            for d in NEIGHBOURS:
-                p = (pos[0] + d[0], pos[1] + d[1])
-                dist = (step[0] - p[0]) ** 2 + (step[1] - p[1]) ** 2
-                if dist < minimum and toolFits(target, image_cutoff, reversed(tool_shape), p):
-                    minimum = dist
-                    next_pos = p
-
-            if not next_pos:
-                unreachable.add(step)
-                distance.putpixel(step, 0);
-                continue
-
-            pos = next_pos
-            useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
+            pos = step
+            useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, pos)
             trace_steps.append({
-                'x': formatFloat(args, next_pos[0] * args.precision),
-                'y': formatFloat(args, next_pos[1] * args.precision),
+                'x': formatFloat(args, pos[0] * args.precision),
+                'y': formatFloat(args, pos[1] * args.precision),
                 'useful': useful,
             })
 
