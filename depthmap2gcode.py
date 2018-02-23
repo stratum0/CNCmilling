@@ -2,9 +2,14 @@
 
 import sys
 import argparse
+from decimal import Decimal
 from PIL import Image
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+
+def formatFloat(args, f):
+    d = (Decimal(f) / Decimal(args.str_precision)).quantize(1) / Decimal(args.str_precision)
+    return d.quantize(Decimal(1)) if d == d.to_integral() else d.normalize()
 
 def toolPixels(args, diameter):
     pixel_diameter = int(diameter / args.precision)
@@ -112,9 +117,11 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
             break
 
         print("G90", file=out)
-        print("G0 Z%f" % args.zspace, file=out)
-        print("G0 X%f Y%f" % (start[0] * args.precision, start[1] * args.precision), file=out)
-        print("G1 Z%f" % -z, file=out)
+        print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
+        print("G0 X%s Y%s" % (
+            formatFloat(args, start[0] * args.precision),
+            formatFloat(args, start[1] * args.precision)), file=out)
+        print("G1 Z%s" % formatFloat(args, -z), file=out)
 
         unreachable = set()
 
@@ -154,11 +161,13 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
                 distance.putpixel(step, 0);
                 continue
 
-            print("G1 X%f Y%f" % (next_pos[0] * args.precision, next_pos[1] * args.precision), file=out)
+            print("G1 X%s Y%s" % (
+                formatFloat(args, next_pos[0] * args.precision),
+                formatFloat(args, next_pos[1] * args.precision)), file=out)
             pos = next_pos
             applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
 
-    print("G0 Z%f" % args.zspace, file=out)
+    print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
 
 def generateCommands(target, state, args, diameter, out):
     planes = args.planes
@@ -192,7 +201,7 @@ def main():
     parser.add_argument('--zspace', dest='zspace', default='10', type=float, help="""
     Z distance to hover above origin when moving to disconnected region, in mm
     """)
-    parser.add_argument('--precision', dest='precision', default='0.1', type=float, help="""
+    parser.add_argument('--precision', dest='str_precision', default='0.1', type=str, help="""
     Pixel quantization size, this is the smallest surface size you don't care about, in mm.
     Smaller values will increase runtime.
     """)
@@ -211,21 +220,43 @@ def main():
         print("\nNo input file given.", file=sys.stderr)
         sys.exit(1)
 
+    args.precision = float(args.str_precision)
+
     input = Image.open(args.input).convert('L', dither=None)
     target = input.resize((int(args.width / args.precision), int(args.height / args.precision)),
             resample=Image.LANCZOS)
     state = Image.new('L', target.size, 255)
 
-    for tool in args.tool:
+    for i, tool in enumerate(args.tool):
         if len(tool.split(':')) != 2:
             parser.print_help()
             print("\nCould not parse output file from --tool %s" % tool, file=sys.stderr)
             sys.exit(1)
+
+        tool_target = target
+        if i != len(args.tool) - 1:
+            print("Padding target geometry for coarse tool run")
+            tool_target = target.copy()
+            for j in [0, 1]:
+                new_target = tool_target.copy()
+                for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
+                    maximum = tool_target.getpixel(p) + 1
+                    for n in NEIGHBOURS:
+                        pn = (p[0] + n[0], p[1] + n[1])
+                        if(pn[0] < 0 or pn[0] >= target.size[0] or
+                            pn[1] < 0 or pn[1] >= target.size[1]):
+                            continue
+                        maximum = max(maximum, tool_target.getpixel(pn))
+                    new_target.putpixel(p, maximum)
+                tool_target = new_target
+
+        tool_target.show()
+
         (diameter, outfile) = tool.split(':')
         with open(outfile, 'w') as out:
-            generateCommands(target=target, state=state, args=args, diameter=float(diameter), out=out)
+            generateCommands(target=tool_target, state=state, args=args, diameter=float(diameter), out=out)
 
-    state.show()
+        state.show()
 
 
 if __name__ == '__main__':
