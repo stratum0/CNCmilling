@@ -7,6 +7,29 @@ from PIL import Image
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 
+class PythonImage:
+    def __init__(self, img):
+        self.img = img
+        self.size = img.size
+        self.width = self.size[0]
+        self.height = self.size[1]
+        self.data = list(img.getdata())
+
+    def getpixel(self, p):
+        return self.data[p[0] + self.width * p[1]]
+
+    def putpixel(self, p, v):
+        self.data[p[0] + self.width * p[1]] = v
+
+    def copy(self):
+        self.img.putdata(self.data)
+        return PythonImage(self.img.copy())
+
+    def show(self):
+        self.img.putdata(self.data)
+        return self.img.show()
+
+
 def formatFloat(args, f):
     d = (Decimal(f) / Decimal(args.str_precision)).quantize(1) * Decimal(args.str_precision)
     return d.quantize(Decimal(1)) if d == d.to_integral() else d.normalize()
@@ -47,6 +70,8 @@ def emitTrace(args, z, trace, out):
     if not trace:
         print("... trace was empty after optimization, skipped")
         return
+    else:
+        print("... of length", len(trace))
 
     print("G90", file=out)
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
@@ -121,7 +146,7 @@ def applyTool(state, distance, cut_depth, shape, inner, pos):
 
 
 def generateSweep(target, state, args, diameter, out, image_cutoff, z):
-    distance = Image.new('I', target.size, 999999999)
+    distance = PythonImage(Image.new('I', target.size, 999999999))
     for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
         t = target.getpixel(p)
         s = state.getpixel(p)
@@ -154,7 +179,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
     trace = 0
     while True:
         trace = trace + 1
-        print("Emitting trace", trace)
+        print("Computing trace", trace)
 
         maximum = 0
         start = None
@@ -169,6 +194,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
                     distance.putpixel(p, 0)
         
         if not start:
+            print("... nothing to do")
             break
 
         unreachable = set()
@@ -197,7 +223,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
                     continue
 
                 dist = distance.getpixel(p)
-                if dist < minimum and dist > 0:
+                if dist > 0 and dist < minimum:
                     minimum = dist
                     step = p
 
@@ -308,7 +334,9 @@ def main():
     input = Image.open(args.input).convert('L', dither=None)
     target = input.resize((int(args.width / args.precision), int(args.height / args.precision)),
             resample=Image.LANCZOS)
-    state = Image.new('L', target.size, 255)
+
+    target = PythonImage(target)
+    state = PythonImage(Image.new('L', target.size, 255))
 
     for i, tool in enumerate(args.tool):
         parts = tool.split(':')
