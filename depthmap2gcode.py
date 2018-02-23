@@ -11,6 +11,53 @@ def formatFloat(args, f):
     d = (Decimal(f) / Decimal(args.str_precision)).quantize(1) * Decimal(args.str_precision)
     return d.quantize(Decimal(1)) if d == d.to_integral() else d.normalize()
 
+
+def optimizeTrace(trace):
+    while trace and not trace[0]['useful']:
+        trace = trace[1:]
+    while trace and not trace[-1]['useful']:
+        trace = trace[:-1]
+
+    while True:
+        i = 0
+        while i < len(trace) and trace[i]['useful']:
+            i = i + 1
+        if i >= len(trace):
+            break
+
+        visited = {}
+        shortened = False
+        while i < len(trace) and not trace[i]['useful']:
+            position = (trace[i]['x'], trace[i]['y'])
+            if position in visited:
+                start = visited[(trace[i]['x'], trace[i]['y'])]
+                trace = trace[0:start] + trace[i:]
+                shortened = True
+                break
+            visited[position] = i
+            i = i + 1
+
+        if not shortened:
+            break
+
+    return trace
+
+
+def emitTrace(args, z, trace, out):
+    if not trace:
+        print("... trace was empty after optimization, skipped")
+        return
+
+    print("G90", file=out)
+    print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
+    for i, step in enumerate(trace):
+        if i == 0:
+            print("G0 X%s Y%s" % (step['x'], step['y']), file=out)
+            print("G1 Z%s" % formatFloat(args, -z), file=out)
+        else:
+            print("G1 X%s Y%s" % (step['x'], step['y']), file=out)
+
+
 def toolPixels(args, diameter):
     pixel_diameter = int(diameter / args.precision)
     edge = pixel_diameter * pixel_diameter / 4
@@ -54,15 +101,23 @@ def toolFits(target, image_cutoff, tool_shape, position):
 
 
 def applyTool(state, distance, cut_depth, shape, inner, pos):
+    useful = False
     depth = int(cut_depth)
 
     for t in shape:
         p = (pos[0] + t[0], pos[1] + t[1])
-        state.putpixel(p, min(depth, state.getpixel(p)))
+        state_old = state.getpixel(p)
+        if depth < state_old:
+            state.putpixel(p, depth)
+            useful = True
 
     for i in inner:
         p = (pos[0] + t[0], pos[1] + t[1])
-        distance.putpixel(p, 0)
+        distance_old = distance.getpixel(p)
+        if distance_old != 0:
+            distance.putpixel(p, 0)
+
+    return useful
 
 
 def generateSweep(target, state, args, diameter, out, image_cutoff, z):
@@ -116,17 +171,16 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
         if not start:
             break
 
-        print("G90", file=out)
-        print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
-        print("G0 X%s Y%s" % (
-            formatFloat(args, start[0] * args.precision),
-            formatFloat(args, start[1] * args.precision)), file=out)
-        print("G1 Z%s" % formatFloat(args, -z), file=out)
-
         unreachable = set()
 
         pos = start
-        applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
+        useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
+        trace_steps = []
+        trace_steps.append({
+            'x': formatFloat(args, start[0] * args.precision),
+            'y': formatFloat(args, start[1] * args.precision),
+            'useful': useful,
+        })
         while True:
             minimum = 999999999
             step = None
@@ -161,11 +215,16 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
                 distance.putpixel(step, 0);
                 continue
 
-            print("G1 X%s Y%s" % (
-                formatFloat(args, next_pos[0] * args.precision),
-                formatFloat(args, next_pos[1] * args.precision)), file=out)
             pos = next_pos
-            applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
+            useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, tool_inner, pos)
+            trace_steps.append({
+                'x': formatFloat(args, next_pos[0] * args.precision),
+                'y': formatFloat(args, next_pos[1] * args.precision),
+                'useful': useful,
+            })
+
+        trace_steps = optimizeTrace(trace_steps)
+        emitTrace(args, z=z, trace=trace_steps, out=out)
 
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
 
