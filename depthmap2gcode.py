@@ -8,7 +8,7 @@ from PIL import Image
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 
 def formatFloat(args, f):
-    d = (Decimal(f) / Decimal(args.str_precision)).quantize(1) / Decimal(args.str_precision)
+    d = (Decimal(f) / Decimal(args.str_precision)).quantize(1) * Decimal(args.str_precision)
     return d.quantize(Decimal(1)) if d == d.to_integral() else d.normalize()
 
 def toolPixels(args, diameter):
@@ -58,7 +58,7 @@ def applyTool(state, distance, cut_depth, shape, inner, pos):
 
     for t in shape:
         p = (pos[0] + t[0], pos[1] + t[1])
-        state.putpixel(p, depth)
+        state.putpixel(p, min(depth, state.getpixel(p)))
 
     for i in inner:
         p = (pos[0] + t[0], pos[1] + t[1])
@@ -76,7 +76,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
     to_check = set((x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1]))
     while to_check:
         if len(to_check) % 1000 == 0:
-            print("...", len(to_check))
+            print("\x1B[1G...", len(to_check), "  \x1B[1F")
         p = to_check.pop()
         for d in NEIGHBOURS:
             pd = (p[0] + d[0], p[1] + d[1])
@@ -92,9 +92,9 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
     tool_inner = sorted(toolPixels(args, diameter - args.overlap), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_edge = sorted(toolEdge(tool_shape), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_region = sorted(tool_shape + tool_edge, key=lambda p: p[0] * p[0] + p[1] * p[1])
-    print("tool inner:", tool_inner)
-    print("tool shape:", tool_shape)
-    print("tool edge:", tool_edge)
+    # print("tool inner:", tool_inner)
+    # print("tool shape:", tool_shape)
+    # print("tool edge:", tool_edge)
 
     trace = 0
     while True:
@@ -170,12 +170,29 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
 
 def generateCommands(target, state, args, diameter, out):
-    planes = args.planes
-    depth = args.depth
+    planes = list(range(0, args.planes))
+    cut_early = []
+    cut_late = []
 
-    for plane in range(0, planes):
-        image_cutoff = 255.0 - (plane + 1) * (255.0 / (planes + 1))
-        z = (plane + 1) * (depth / planes)
+    last_cut = 0
+    next_cut = 0
+    for plane in planes:
+        z = (plane + 1) * (args.depth / args.planes)
+        if z - last_cut < args.cutdepth:
+            pass
+        elif cut_late:
+            cut_early.append(cut_late.pop())
+            last_cut = next_cut
+        else:
+            print("Not enough cut planes to satisfy --cutdepth constraint", file=sys.stderr)
+            sys.exit(1)
+
+        cut_late.append(plane)
+        next_cut = z
+
+    for plane in cut_early + list(reversed(cut_late)):
+        image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1))
+        z = (plane + 1) * (args.depth / args.planes)
         print("plane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
 
         generateSweep(target=target, state=state, args=args, diameter=diameter,
@@ -207,6 +224,9 @@ def main():
     """)
     parser.add_argument('--overlap', dest='overlap', default='0.1', type=float, help="""
     How much parallel sweeps should overlap to make sure material is cleared, in mm.
+    """)
+    parser.add_argument('--cutdepth', dest='cutdepth', default='5', type=float, help="""
+    Maximum depth to cut in one pass, in mm.
     """)
     required.add_argument('--tool', metavar='<diameter>:outputfile', action='append',
     required=True, help="""
@@ -245,12 +265,11 @@ def main():
                         pn = (p[0] + n[0], p[1] + n[1])
                         if(pn[0] < 0 or pn[0] >= target.size[0] or
                             pn[1] < 0 or pn[1] >= target.size[1]):
-                            continue
-                        maximum = max(maximum, tool_target.getpixel(pn))
+                            maximum = 256
+                        else:
+                            maximum = max(maximum, tool_target.getpixel(pn))
                     new_target.putpixel(p, maximum)
                 tool_target = new_target
-
-        tool_target.show()
 
         (diameter, outfile) = tool.split(':')
         with open(outfile, 'w') as out:
