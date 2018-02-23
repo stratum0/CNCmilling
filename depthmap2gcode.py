@@ -228,16 +228,17 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
     any_at_distance = False
 
     trace = 0
+    all_idx = list(map(lambda c: c[0] + distance_width * c[1], all_coords))
     while True:
         trace = trace + 1
         print("Computing trace", trace)
 
         minimum = 999999999
         start = None
-        for p in all_coords:
-            pdist = distance_data[p[0] + distance_width * p[1]][0]
-            if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
-                start = p
+        for q in all_idx:
+            pdist = distance_data[q][0]
+            if pdist >= distance_to_cut and pdist < minimum and pdist < distance_to_cut + 2:
+                start = (q % distance_width, q // distance_width)
                 minimum = pdist
                 break
         
