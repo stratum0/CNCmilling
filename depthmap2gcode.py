@@ -182,6 +182,9 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
             'useful': useful,
         })
         while True:
+            if len(trace_steps) % 1000 == 0:
+                print("\x1B[1G...", len(trace_steps), "  \x1B[1F")
+
             minimum = 999999999
             step = None
             for offset in tool_region:
@@ -329,7 +332,6 @@ def main():
             tool_target = target.copy()
             padding_pixels = 1 + int(padding / args.precision)
             padding_z = float(padding) / args.depth * 255
-            print(padding_pixels, padding_z)
             pad_accum = 0
             for j in range(0, padding_pixels):
                 pad_accum += padding_z / padding_pixels
