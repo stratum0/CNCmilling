@@ -228,10 +228,11 @@ def main():
     parser.add_argument('--cutdepth', dest='cutdepth', default='5', type=float, help="""
     Maximum depth to cut in one pass, in mm.
     """)
-    required.add_argument('--tool', metavar='<diameter>:outputfile', action='append',
+    required.add_argument('--tool', metavar='<diameter>:[padding:]outputfile', action='append',
     required=True, help="""
     Specify a G-code output file for a tool of given diameter in mm. Can be specified
-    multiple times to generate a set of files for multi-tool cuts.
+    multiple times to generate a set of files for multi-tool cuts. If a padding is specified,
+    the target geometry is padded (in all 3 dimensions) by this amount, in mm, for this tool.
     """)
 
     args = parser.parse_args()
@@ -248,19 +249,39 @@ def main():
     state = Image.new('L', target.size, 255)
 
     for i, tool in enumerate(args.tool):
-        if len(tool.split(':')) != 2:
+        parts = tool.split(':')
+        if len(parts) == 2:
+            (diameter, outfile) = tool.split(':')
+            if i == len(args.tool) - 1:
+                padding = 0;
+            else:
+                padding = 0.3;
+        elif len(parts) == 3:
+            (diameter, padding, outfile) = tool.split(':')
+            padding = float(padding)
+        else:
             parser.print_help()
             print("\nCould not parse output file from --tool %s" % tool, file=sys.stderr)
             sys.exit(1)
 
         tool_target = target
-        if i != len(args.tool) - 1:
+        if padding:
             print("Padding target geometry for coarse tool run")
             tool_target = target.copy()
-            for j in [0, 1]:
+            padding_pixels = 1 + int(padding / args.precision)
+            padding_z = float(padding) / args.depth * 255
+            print(padding_pixels, padding_z)
+            pad_accum = 0
+            for j in range(0, padding_pixels):
+                pad_accum += padding_z / padding_pixels
+                z_pad = 0
+                if pad_accum > 0:
+                    z_pad = int(1 + pad_accum)
+                    pad_accum -= z_pad
+
                 new_target = tool_target.copy()
                 for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
-                    maximum = tool_target.getpixel(p) + 1
+                    maximum = tool_target.getpixel(p) + z_pad
                     for n in NEIGHBOURS:
                         pn = (p[0] + n[0], p[1] + n[1])
                         if(pn[0] < 0 or pn[0] >= target.size[0] or
@@ -271,7 +292,6 @@ def main():
                     new_target.putpixel(p, maximum)
                 tool_target = new_target
 
-        (diameter, outfile) = tool.split(':')
         with open(outfile, 'w') as out:
             generateCommands(target=tool_target, state=state, args=args, diameter=float(diameter), out=out)
 
