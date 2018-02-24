@@ -134,9 +134,11 @@ def applyTool(state, distance, cut_depth, shape, pos):
     state_width = state.width
     state_height = state.height
 
+    px = pos[0]
+    py = pos[1]
     for t in shape:
-        x = pos[0] + t[0]
-        y = pos[1] + t[1]
+        x = px + t[0]
+        y = py + t[1]
         if(x < 0 or x >= state_width or
                 y < 0 or y >= state_height):
             continue
