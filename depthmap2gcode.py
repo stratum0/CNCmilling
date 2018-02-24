@@ -164,17 +164,22 @@ def buildDistanceMap(distance, all_coords):
 
     checked = set()
     next_stratum = 0
-    strata = list(map(lambda d: [], range(0, distance_width * distance_width + distance_height * distance_height)))
+    max_stratum = 0
+    strata = {}
     for p in all_coords:
         dist = distance_data[p[0] + distance_width * p[1]][0]
-        if dist >= 0 and dist < len(strata):
-            strata[int(dist)].append(p)
+        if dist >= 0 and dist < 99999999:
+            disti = int(dist)
+            if disti not in strata:
+                strata[disti] = []
+            strata[disti].append(p)
+            max_stratum = max(max_stratum, disti)
 
     running = True
     while True:
-        while not strata[next_stratum]:
+        while not strata.get(next_stratum):
             next_stratum = next_stratum + 1
-            if next_stratum >= len(strata):
+            if next_stratum > max_stratum:
                 running = False
                 break
         if not running:
@@ -207,6 +212,9 @@ def buildDistanceMap(distance, all_coords):
                 if np in checked:
                     checked.remove(np)
                 distPi = int(distP)
+                if distPi not in strata:
+                    strata[distPi] = []
+                    max_stratum = max(max_stratum, distPi)
                 strata[distPi].append(np)
                 if distPi < next_stratum:
                     next_stratum = distPi
