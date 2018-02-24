@@ -7,7 +7,7 @@ from PIL import Image
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
-NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3)]
+NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3) if (x, y) not in NEIGHBOURS_AND_SELF]
 
 class PythonImage(object):
     def __init__(self, img):
@@ -248,9 +248,6 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
             'useful': useful,
         })
         while True:
-            if len(trace_steps) % 1000 == 0:
-                print("\x1B[1G...", len(trace_steps), "  \x1B[1F")
-
             step = None
             minimum = 999999999
             for offset in NEIGHBOURS2:
