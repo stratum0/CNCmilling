@@ -84,10 +84,7 @@ def optimizeTrace(trace):
 
 def emitTrace(args, z, trace, out):
     if not trace:
-        print("... trace was empty after optimization, skipped")
         return
-    else:
-        print("... of length", len(trace))
 
     print("G90", file=out)
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
@@ -127,18 +124,6 @@ def toolEdge(shape):
                 edge.add(e)
 
     return list(edge)
-
-
-def toolFits(target, image_cutoff, tool_shape, position):
-    for t in tool_shape:
-        tp = (position[0] + t[0], position[1] + t[1])
-        if(tp[0] < 0 or tp[0] >= target.size[0] or
-            tp[1] < 0 or tp[1] >= target.size[1]):
-            return False
-        if target.getpixel(tp) >= image_cutoff:
-            return False
-
-    return True
 
 
 def applyTool(state, distance, cut_depth, shape, pos):
@@ -195,10 +180,7 @@ def buildDistanceMap(distance, all_coords):
                 to_check.add((x, y))
 
 
-def generateSweep(target, state, args, diameter, out, image_cutoff, z):
-    all_coords = [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]
-
-    distance = DistanceImage(Image.new('I', target.size))
+def initDistanceMap(target, state, distance, image_cutoff, all_coords):
     # So performance, much wow...
     distance_data = distance.data
     distance_width = distance.width
@@ -213,30 +195,28 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
         else:
             distance_data[p[0] + distance_width * p[1]] = (999999999, None)
 
+
+def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coords, all_idx, tool_shape):
+    distance = DistanceImage(Image.new('I', target.size))
+    # So performance, much wow...
+    distance_data = distance.data
+    distance_width = distance.width
+
+    initDistanceMap(target, state, distance, image_cutoff, all_coords)
     buildDistanceMap(distance, all_coords)
 
-    tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
-    tool_inner = sorted(toolPixels(args, diameter - args.overlap), key=lambda p: p[0] * p[0] + p[1] * p[1])
-    tool_edge = sorted(toolEdge(tool_shape), key=lambda p: p[0] * p[0] + p[1] * p[1])
-
-    for p in all_coords:
-        sqrdist = distance_data[p[0] + distance_width * p[1]]
-        distance_data[p[0] + distance_width * p[1]] = sqrdist[0] ** 0.5
+    for q in all_idx:
+        distance_data[q] = distance_data[q][0] ** 0.5
 
     distance_to_cut = (diameter / 2) / args.precision
     any_at_distance = False
 
-    trace = 0
-    all_idx = list(map(lambda c: c[0] + distance_width * c[1], all_coords))
     distance_strata = list(map(lambda i: [], range(0, max(distance_width, distance.height) + 3)))
     for q in all_idx:
         d = int(distance_data[q])
         distance_strata[d].append(q)
 
     while True:
-        trace = trace + 1
-        print("Computing trace", trace)
-
         minimum = 999999999
         start = None
         for i in [0, 1, 2]:
@@ -251,12 +231,10 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z):
         
         if not start:
             if not any_at_distance:
-                print("... nothing to do")
                 break
             else:
                 any_at_distance = False
                 distance_to_cut += (diameter / 2 - args.overlap) / args.precision
-                trace = trace - 1
                 continue
 
         any_at_distance = True
@@ -320,13 +298,18 @@ def generateCommands(target, state, args, diameter, out):
         cut_late.append(plane)
         next_cut = z
 
+    tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
+    all_coords = [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]
+    state_width = state.size[0]
+    all_idx = list(map(lambda c: c[0] + state_width * c[1], all_coords))
     for plane in cut_early + list(reversed(cut_late)):
         image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1))
         z = (plane + 1) * (args.depth / args.planes)
         print("plane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
 
         generateSweep(target=target, state=state, args=args, diameter=diameter,
-                out=out, image_cutoff=image_cutoff, z=z)
+                out=out, image_cutoff=image_cutoff, z=z, all_coords=all_coords, all_idx=all_idx,
+                tool_shape=tool_shape)
 
 
 def main():
