@@ -179,6 +179,7 @@ def buildDistanceMap(distance, all_coords):
     while True:
         while not strata.get(next_stratum):
             next_stratum = next_stratum + 1
+            print("\x1B[1G...", next_stratum, "  \x1B[1F")
             if next_stratum > max_stratum:
                 running = False
                 break
@@ -258,6 +259,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
 
     while True:
         minimum = 999999999
+        # TODO: Collect all minimal starts and choose the nearest.
         start = None
         for i in [0, 1, 2]:
             for q in distance_strata[int(distance_to_cut) + i]:
