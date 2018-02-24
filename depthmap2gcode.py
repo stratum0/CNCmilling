@@ -162,11 +162,29 @@ def buildDistanceMap(distance, all_coords):
     distance_width = distance.width
     distance_height = distance.height
 
-    to_check = set(all_coords)
-    while to_check:
-        if len(to_check) % 1000 == 0:
-            print("\x1B[1G...", len(to_check), "  \x1B[1F")
-        p = to_check.pop()
+    checked = set()
+    next_stratum = 0
+    strata = list(map(lambda d: [], range(0, distance_width * distance_width + distance_height * distance_height)))
+    for p in all_coords:
+        dist = distance_data[p[0] + distance_width * p[1]][0]
+        if dist >= 0 and dist < len(strata):
+            strata[int(dist)].append(p)
+
+    running = True
+    while True:
+        while not strata[next_stratum]:
+            next_stratum = next_stratum + 1
+            if next_stratum >= len(strata):
+                running = False
+                break
+        if not running:
+            break
+
+        p = strata[next_stratum].pop()
+        if p in checked:
+            continue
+
+        checked.add(p)
         nearest = distance_data[p[0] + distance_width * p[1]][1]
         if not nearest:
             continue
@@ -185,7 +203,13 @@ def buildDistanceMap(distance, all_coords):
 
             if distP < distance_data[idx][0]:
                 distance_data[idx] = (distP, nearest)
-                to_check.add((x, y))
+                np = (x, y)
+                if np in checked:
+                    checked.remove(np)
+                distPi = int(distP)
+                strata[distPi].append(np)
+                if distPi < next_stratum:
+                    next_stratum = distPi
 
 
 def initDistanceMap(target, state, distance, image_cutoff, all_coords):
@@ -219,7 +243,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
     distance_to_cut = (diameter / 2) / args.precision
     any_at_distance = False
 
-    distance_strata = list(map(lambda i: [], range(0, max(distance_width, distance.height) + 3)))
+    distance_strata = list(map(lambda i: [], range(0, distance_width + distance.height + 3)))
     for q in all_idx:
         d = int(distance_data[q])
         distance_strata[d].append(q)
