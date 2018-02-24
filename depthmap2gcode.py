@@ -130,15 +130,21 @@ def applyTool(state, distance, cut_depth, shape, pos):
     useful = False
     depth = int(cut_depth)
 
+    state_data = state.data
+    state_width = state.width
+    state_height = state.height
+
     for t in shape:
-        p = (pos[0] + t[0], pos[1] + t[1])
-        if(p[0] < 0 or p[0] >= state.size[0] or
-                p[1] < 0 or p[1] >= state.size[1]):
+        x = pos[0] + t[0]
+        y = pos[1] + t[1]
+        if(x < 0 or x >= state_width or
+                y < 0 or y >= state_height):
             continue
 
-        state_old = state.getpixel(p)
+        idx = x + state_width * y
+        state_old = state_data[idx]
         if depth < state_old:
-            state.putpixel(p, depth)
+            state_data[idx] = depth
             useful = True
 
     for n in NEIGHBOURS_AND_SELF:
