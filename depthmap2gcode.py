@@ -3,7 +3,7 @@
 import sys
 import argparse
 from decimal import Decimal
-from PIL import Image
+from PIL import Image, ImageOps
 
 # TODO: The paths of each plane could use an extra-pass of start point sorting after generation
 #       and optimization.
@@ -386,6 +386,12 @@ def main():
     parser.add_argument('--cutdepth', dest='cutdepth', default='5', type=float, help="""
     Maximum depth to cut in one pass, in mm.
     """)
+    parser.add_argument('--result', dest='result', type=str, help="""
+    Image file to store result state in.
+    """)
+    parser.add_argument('--inverse', dest='inverse', action='store_true', help="""
+    Invert image before cutting, i.e. now assume white as deep into material.
+    """)
     required.add_argument('--tool', metavar='<diameter>:[padding:]outputfile', action='append',
     required=True, help="""
     Specify a G-code output file for a tool of given diameter in mm. Can be specified
@@ -402,6 +408,8 @@ def main():
     args.precision = float(args.str_precision)
 
     input = Image.open(args.input).convert('L', dither=None).transpose(Image.FLIP_LEFT_RIGHT)
+    if args.inverse:
+        input = ImageOps.invert(input)
     target = input.resize((int(args.width / args.precision), int(args.height / args.precision)),
             resample=Image.LANCZOS)
 
@@ -455,6 +463,25 @@ def main():
             generateCommands(target=tool_target, state=state, args=args, diameter=float(diameter), out=out)
 
         state.show()
+
+    if args.result:
+        depth_map = {
+            255: 255,
+        }
+        for plane in range(0, args.planes):
+            z = (plane + 1) * (args.depth / args.planes)
+            image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1))
+            image_cutoff -= 1e-6;
+            image_cutoff = int(image_cutoff)
+            depth_map[image_cutoff] = int(255 - (z / args.depth * 255))
+
+        result = PythonImage(Image.new('RGB', state.size, (255, 255, 255)))
+        for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
+            depth = state.getpixel(p)
+            v = depth_map[depth]
+            result.putpixel(p, (v, v, v))
+
+        result.copy().img.transpose(Image.FLIP_LEFT_RIGHT).save(args.result)
 
 
 if __name__ == '__main__':
