@@ -5,9 +5,6 @@ import argparse
 from decimal import Decimal
 from PIL import Image, ImageOps
 
-# TODO: The paths of each plane could use an extra-pass of start point sorting after generation
-#       and optimization.
-
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
 NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3) if (x, y) not in NEIGHBOURS_AND_SELF]
@@ -260,6 +257,8 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         d = int(distance_data[q])
         distance_strata[d].append(q)
 
+    plane_traces = []
+
     pos = (0, 0)
     while True:
         minimum = 99999999999
@@ -317,10 +316,26 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
                 'useful': useful,
             })
 
-        trace_steps = optimizeTrace(trace_steps)
-        emitTrace(args, z=z, trace=trace_steps, out=out)
+        plane_traces.append(optimizeTrace(trace_steps))
 
-    print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
+    plane_traces = list(filter(bool, plane_traces))
+
+    pos = (0, 0)
+    while plane_traces:
+        minimum = 99999999999
+        best = None
+        for trace in plane_traces:
+            dx = float(trace[0]['x']) - pos[0]
+            dy = float(trace[0]['y']) - pos[1]
+            dist = dx * dx + dy * dy
+            if dist < minimum:
+                best = trace
+                minimum = dist
+
+        emitTrace(args, z=z, trace=best, out=out)
+        plane_traces.remove(best)
+        pos = (float(best[-1]['x']), float(best[-1]['y']))
+
 
 def generateCommands(target, state, args, diameter, out):
     planes = list(range(0, args.planes))
@@ -355,6 +370,8 @@ def generateCommands(target, state, args, diameter, out):
         generateSweep(target=target, state=state, args=args, diameter=diameter,
                 out=out, image_cutoff=image_cutoff, z=z, all_coords=all_coords, all_idx=all_idx,
                 tool_shape=tool_shape)
+
+    print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
 
 
 def main():
