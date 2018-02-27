@@ -5,11 +5,12 @@ import argparse
 from decimal import Decimal
 from PIL import Image
 
+# TODO: The paths of each plane could use an extra-pass of start point sorting after generation
+#       and optimization.
+
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
 NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3) if (x, y) not in NEIGHBOURS_AND_SELF]
-
-# TODO: Output image is mirrored in x-direction!
 
 class PythonImage(object):
     def __init__(self, img):
@@ -259,17 +260,20 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         d = int(distance_data[q])
         distance_strata[d].append(q)
 
+    pos = (0, 0)
     while True:
-        minimum = 999999999
-        # TODO: Collect all minimal starts and choose the nearest.
+        minimum = 99999999999
         start = None
         for i in [0, 1, 2]:
             for q in distance_strata[int(distance_to_cut) + i]:
                 pdist = distance_data[q]
-                if pdist >= distance_to_cut and pdist < minimum and pdist < distance_to_cut + 2:
-                    start = (q % distance_width, q // distance_width)
-                    minimum = pdist
-                    break
+                if pdist >= distance_to_cut and pdist < distance_to_cut + 2:
+                    start_x = q % distance_width
+                    start_y = q // distance_width
+                    dist = start_x * start_x + start_y + start_y
+                    if dist < minimum:
+                        minimum = dist
+                        start = (start_x, start_y)
             if start:
                 break
         
@@ -397,7 +401,7 @@ def main():
 
     args.precision = float(args.str_precision)
 
-    input = Image.open(args.input).convert('L', dither=None)
+    input = Image.open(args.input).convert('L', dither=None).transpose(Image.FLIP_LEFT_RIGHT)
     target = input.resize((int(args.width / args.precision), int(args.height / args.precision)),
             resample=Image.LANCZOS)
 
