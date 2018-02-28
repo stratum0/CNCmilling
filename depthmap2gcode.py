@@ -5,7 +5,6 @@ import argparse
 from decimal import Decimal
 from PIL import Image, ImageOps
 
-# TODO: During trace sorting, consider running traces backwards
 # TODO: After trace sorting, try to connect endpoints via A* using the free-cut path,
 #       avoiding useless collision avoidance
 
@@ -241,6 +240,42 @@ def initDistanceMap(target, state, distance, image_cutoff, all_coords):
             distance_data[p[0] + distance_width * p[1]] = (999999999, None)
 
 
+def sortTraces(args, traces):
+    traces = list(filter(bool, traces))
+    result = []
+
+    pos = (0, 0)
+    while traces:
+        minimum = 99999999999
+        best = None
+        reverse = False
+        for trace in traces:
+            dx = float(trace[0]['x']) - pos[0]
+            dy = float(trace[0]['y']) - pos[1]
+            dist = dx * dx + dy * dy
+            if dist < minimum:
+                best = trace
+                reverse = False
+                minimum = dist
+
+            dx = float(trace[-1]['x']) - pos[0]
+            dy = float(trace[-1]['y']) - pos[1]
+            dist = dx * dx + dy * dy
+            if dist < minimum:
+                best = trace
+                reverse = True
+                minimum = dist
+
+        if reverse:
+            result.append(list(reversed(best)))
+        else:
+            result.append(best)
+        traces.remove(best)
+        pos = (float(best[-1]['x']), float(best[-1]['y']))
+
+    return result
+
+
 def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coords, all_idx, tool_shape):
     distance = DistanceImage(Image.new('I', target.size))
     # So performance, much wow...
@@ -322,23 +357,9 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
 
         plane_traces.append(optimizeTrace(trace_steps))
 
-    plane_traces = list(filter(bool, plane_traces))
-
-    pos = (0, 0)
-    while plane_traces:
-        minimum = 99999999999
-        best = None
-        for trace in plane_traces:
-            dx = float(trace[0]['x']) - pos[0]
-            dy = float(trace[0]['y']) - pos[1]
-            dist = dx * dx + dy * dy
-            if dist < minimum:
-                best = trace
-                minimum = dist
-
-        emitTrace(args, z=z, trace=best, out=out)
-        plane_traces.remove(best)
-        pos = (float(best[-1]['x']), float(best[-1]['y']))
+    plane_traces = sortTraces(args, plane_traces)
+    for trace in plane_traces:
+        emitTrace(args, z=z, trace=trace, out=out)
 
 
 def generateCommands(target, state, args, diameter, out):
