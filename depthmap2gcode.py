@@ -5,7 +5,6 @@ import argparse
 from decimal import Decimal
 from PIL import Image, ImageOps
 
-# TODO: Something is broken with applyTool + the depth stored in state. Make state just plane index.
 # TODO: If a connection cannot be found, consider a different followup trace during sorting
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
@@ -143,9 +142,8 @@ def toolEdge(shape):
     return list(edge)
 
 
-def applyTool(state, distance, cut_depth, shape, pos):
+def applyTool(state, distance, z, shape, pos):
     useful = False
-    depth = int(cut_depth)
 
     state_data = state.data
     state_width = state.width
@@ -162,8 +160,8 @@ def applyTool(state, distance, cut_depth, shape, pos):
 
         idx = x + state_width * y
         state_old = state_data[idx]
-        if depth < state_old:
-            state_data[idx] = depth
+        if z > state_old:
+            state_data[idx] = z
             useful = True
 
     for n in NEIGHBOURS_AND_SELF:
@@ -245,7 +243,7 @@ def initDistanceMap(target, state, distance, image_cutoff, all_coords):
 
     for p in all_coords:
         t = target.getpixel(p)
-        s = state.getpixel(p)
+
         if(t >= image_cutoff or
             p[0] <= 0 or p[0] >= state.size[0] - 1 or
             p[1] <= 0 or p[1] >= state.size[1] - 1):
@@ -304,14 +302,18 @@ def findFreeConnection(args, z, start, end, may_cut_map):
 
     s = (start['x'], start['y'])
     e = (end['x'], end['y'])
-    dist_cutoff = (
-        2 * args.zspace - 2 * z +
-        args.precision * ((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5
-    ) / args.precision
-    
-    # 5mm maximum reconnection length
-    if dist_cutoff > 5 / args.precision:
+
+    planar_dist = ((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5
+    if planar_dist > 5 / args.precision:
         return None
+
+    dist_cutoff = (
+        2 * args.zspace + 2 * z +
+        args.precision * planar_dist
+    ) / args.precision
+
+    # 5mm maximum reconnection length
+    dist_cutoff = min(dist_cutoff, 5 / args.precision)
 
     steps[(s[0], s[1])] = (0, None)
     dist = int(((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5)
@@ -464,7 +466,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         any_at_distance = True
 
         pos = start
-        useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, pos)
+        useful = applyTool(state, distance, z, tool_shape, pos)
         trace_steps = []
         trace_steps.append({
             'x': start[0],
@@ -486,7 +488,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
                 break
 
             pos = step
-            useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, pos)
+            useful = applyTool(state, distance, z, tool_shape, pos)
             trace_steps.append({
                 'x': pos[0],
                 'y': pos[1],
@@ -605,6 +607,7 @@ def main():
 
     target = PythonImage(target)
     state = PythonImage(Image.new('L', target.size, 255))
+    state.data = list(map(lambda v: 0.0, state.data))
 
     for i, tool in enumerate(args.tool):
         parts = tool.split(':')
@@ -652,25 +655,22 @@ def main():
         with open(outfile, 'w') as out:
             generateCommands(target=tool_target, state=state, args=args, diameter=float(diameter), out=out)
 
-        state.show()
+    depth_map = {
+        0: 255,
+    }
+    for plane in range(0, args.planes):
+        z = (plane + 1) * (args.depth / args.planes)
+        depth_map[z] = int(255 - (z / args.depth * 255))
+
+    result = PythonImage(Image.new('RGB', state.size, (255, 255, 255)))
+    for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
+        depth = state.getpixel(p)
+        v = depth_map[depth]
+        result.putpixel(p, (v, v, v))
+
+    result.show()
 
     if args.result:
-        depth_map = {
-            255: 255,
-        }
-        for plane in range(0, args.planes):
-            z = (plane + 1) * (args.depth / args.planes)
-            image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1))
-            image_cutoff -= 1e-6;
-            image_cutoff = int(image_cutoff)
-            depth_map[image_cutoff] = int(255 - (z / args.depth * 255))
-
-        result = PythonImage(Image.new('RGB', state.size, (255, 255, 255)))
-        for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
-            depth = state.getpixel(p)
-            v = depth_map[depth]
-            result.putpixel(p, (v, v, v))
-
         result.copy().img.transpose(Image.FLIP_LEFT_RIGHT).save(args.result)
 
 
