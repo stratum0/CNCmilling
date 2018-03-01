@@ -5,9 +5,6 @@ import argparse
 from decimal import Decimal
 from PIL import Image, ImageOps
 
-# TODO: After trace sorting, try to connect endpoints via A* using the free-cut path,
-#       avoiding useless collision avoidance
-
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
 NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3) if (x, y) not in NEIGHBOURS_AND_SELF]
@@ -47,6 +44,14 @@ class DistanceImage(PythonImage):
             )
             img.putpixel(p, col)
         img.show()
+
+
+class BooleanImage(PythonImage):
+    def __init__(self, img):
+        self.size = img.size
+        self.width = self.size[0]
+        self.height = self.size[1]
+        self.data = list([False for x in range(0, self.width) for y in range(0, self.height)])
 
 
 def formatFloat(args, f):
@@ -93,10 +98,16 @@ def emitTrace(args, z, trace, out):
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
     for i, step in enumerate(trace):
         if i == 0:
-            print("G0 X%s Y%s" % (step['x'], step['y']), file=out)
+            print("G0 X%s Y%s" % (
+                formatFloat(args, step['x'] * args.precision),
+                formatFloat(args, step['y'] * args.precision),
+            ), file=out)
             print("G1 Z%s" % formatFloat(args, -z), file=out)
         else:
-            print("G1 X%s Y%s" % (step['x'], step['y']), file=out)
+            print("G1 X%s Y%s" % (
+                formatFloat(args, step['x'] * args.precision),
+                formatFloat(args, step['y'] * args.precision),
+            ), file=out)
 
 
 def toolPixels(args, diameter):
@@ -250,16 +261,16 @@ def sortTraces(args, traces):
         best = None
         reverse = False
         for trace in traces:
-            dx = float(trace[0]['x']) - pos[0]
-            dy = float(trace[0]['y']) - pos[1]
+            dx = trace[0]['x'] - pos[0]
+            dy = trace[0]['y'] - pos[1]
             dist = dx * dx + dy * dy
             if dist < minimum:
                 best = trace
                 reverse = False
                 minimum = dist
 
-            dx = float(trace[-1]['x']) - pos[0]
-            dy = float(trace[-1]['y']) - pos[1]
+            dx = trace[-1]['x'] - pos[0]
+            dy = trace[-1]['y'] - pos[1]
             dist = dx * dx + dy * dy
             if dist < minimum:
                 best = trace
@@ -271,9 +282,123 @@ def sortTraces(args, traces):
         else:
             result.append(best)
         traces.remove(best)
-        pos = (float(best[-1]['x']), float(best[-1]['y']))
+        pos = (best[-1]['x'], best[-1]['y'])
 
     return result
+
+
+def findFreeConnection(args, z, start, end, may_cut_map):
+    may_cut_data = may_cut_map.data
+    may_cut_width = may_cut_map.width
+
+    checked = set()
+    strata = {}
+    next_stratum = 0
+    max_stratum = 0
+
+    steps = {}
+
+    s = (start['x'], start['y'])
+    e = (end['x'], end['y'])
+    dist_cutoff = (
+        2 * args.zspace - 2 * z +
+        args.precision * ((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5
+    ) / args.precision
+    
+    # 2mm maximum reconnection length
+    dist_cutoff = min(dist_cutoff, 2 / args.precision)
+
+    steps[(s[0], s[1])] = (0, None)
+    dist = int(((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5)
+    strata[0] = [(s[0], s[1])]
+
+    running = True
+    found = None
+    while True:
+        while not strata.get(next_stratum):
+            next_stratum = next_stratum + 1
+            if next_stratum > max_stratum:
+                running = False
+                break
+        if not running:
+            break
+
+        p = strata[next_stratum].pop()
+        if p in checked:
+            continue
+        checked.add(p)
+
+        if p == e:
+            found = True
+            break
+
+        if steps[p][0] > dist_cutoff:
+            continue
+
+        for d in NEIGHBOURS:
+            n = (p[0] + d[0], p[1] + d[1])
+            if not may_cut_data[n[0] + may_cut_width * n[1]]:
+                continue
+
+            s_dist = steps[p][0] + (1.414213562373 if d[0] and d[1] else 1)
+            if n not in steps or s_dist < steps[n][0]:
+                steps[n] = (s_dist, p)
+                if n in checked:
+                    checked.remove(n)
+
+                dx = n[0] - e[0]
+                dy = n[1] - e[1]
+                e_dist = dx * dx + dy * dy
+                if e_dist not in strata:
+                    strata[e_dist] = []
+                    max_stratum = max(max_stratum, e_dist)
+                strata[e_dist].append(n)
+                if e_dist < next_stratum:
+                    next_stratum = e_dist
+
+    if found:
+        i = e
+        connection = []
+        while i != s:
+            connection.append(i)
+            i = steps[i][1]
+        connection.append(s)
+        return list(map(lambda xy: {
+            'x': xy[0],
+            'y': xy[1],
+            'useful': False,
+        }, reversed(connection)))
+
+    return None
+
+
+def connectTraces(args, z, traces, may_cut_map):
+    result = []
+    if not traces:
+        return result
+
+    last = traces[0]
+    traces = traces[1:]
+    progress = 0
+    for trace in traces:
+        progress = progress + 1
+        print("\x1B[1G...", progress, "  \x1B[1F")
+
+        connection = findFreeConnection(args, z, last[-1], trace[0], may_cut_map)
+        if connection:
+            last = last + connection[1:-2] + trace
+        else:
+            result.append(last)
+            last = trace
+
+    result.append(last)
+    return result
+    
+
+def buildMayCutMap(distance, distance_to_cut, all_coords):
+    may_cut = BooleanImage(distance)
+    may_cut.data = list(map(lambda v: distance_to_cut <= v, distance.data))
+    return may_cut
 
 
 def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coords, all_idx, tool_shape):
@@ -289,6 +414,8 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         distance_data[q] = distance_data[q][0] ** 0.5
 
     distance_to_cut = (diameter / 2) / args.precision
+    may_cut_map = buildMayCutMap(distance, distance_to_cut, all_coords)
+
     any_at_distance = False
 
     distance_strata = list(map(lambda i: [], range(0, distance_width + distance.height + 3)))
@@ -329,8 +456,8 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, pos)
         trace_steps = []
         trace_steps.append({
-            'x': formatFloat(args, start[0] * args.precision),
-            'y': formatFloat(args, start[1] * args.precision),
+            'x': start[0],
+            'y': start[1],
             'useful': useful,
         })
         while True:
@@ -350,14 +477,18 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
             pos = step
             useful = applyTool(state, distance, image_cutoff - 1e-6, tool_shape, pos)
             trace_steps.append({
-                'x': formatFloat(args, pos[0] * args.precision),
-                'y': formatFloat(args, pos[1] * args.precision),
+                'x': pos[0],
+                'y': pos[1],
                 'useful': useful,
             })
 
         plane_traces.append(optimizeTrace(trace_steps))
 
+    print("Traces considered: ", len(plane_traces))
     plane_traces = sortTraces(args, plane_traces)
+    print("Traces relevant: ", len(plane_traces))
+    plane_traces = connectTraces(args, z, plane_traces, may_cut_map)
+    print("Traces to emit: ", len(plane_traces))
     for trace in plane_traces:
         emitTrace(args, z=z, trace=trace, out=out)
 
