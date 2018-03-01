@@ -666,10 +666,11 @@ def main():
         v = depth_map[depth]
         result.putpixel(p, (v, v, v))
 
+    result = result.copy().img.transpose(Image.FLIP_LEFT_RIGHT)
     result.show()
 
     if args.result:
-        result.copy().img.transpose(Image.FLIP_LEFT_RIGHT).save(args.result)
+        result.save(args.result)
 
 
 if __name__ == '__main__':
