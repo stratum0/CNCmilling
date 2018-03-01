@@ -279,10 +279,11 @@ def sortTraces(args, traces):
 
         if reverse:
             result.append(list(reversed(best)))
+            pos = (best[0]['x'], best[0]['y'])
         else:
             result.append(best)
+            pos = (best[-1]['x'], best[-1]['y'])
         traces.remove(best)
-        pos = (best[-1]['x'], best[-1]['y'])
 
     return result
 
