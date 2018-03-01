@@ -305,8 +305,9 @@ def findFreeConnection(args, z, start, end, may_cut_map):
         args.precision * ((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5
     ) / args.precision
     
-    # 2mm maximum reconnection length
-    dist_cutoff = min(dist_cutoff, 2 / args.precision)
+    # 5mm maximum reconnection length
+    if dist_cutoff > 5 / args.precision:
+        return None
 
     steps[(s[0], s[1])] = (0, None)
     dist = int(((s[0] - e[0]) ** 2 + (s[1] - e[1]) ** 2) ** 0.5)
@@ -486,8 +487,13 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
 
     print("Traces considered: ", len(plane_traces))
     plane_traces = sortTraces(args, plane_traces)
-    print("Traces relevant: ", len(plane_traces))
-    plane_traces = connectTraces(args, z, plane_traces, may_cut_map)
+    last_relevant = -1
+    while last_relevant != len(plane_traces):
+        print("Traces relevant: ", len(plane_traces))
+        last_relevant = len(plane_traces)
+        plane_traces = connectTraces(args, z, plane_traces, may_cut_map)
+        plane_traces = sortTraces(args, plane_traces)
+
     print("Traces to emit: ", len(plane_traces))
     for trace in plane_traces:
         emitTrace(args, z=z, trace=trace, out=out)
