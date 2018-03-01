@@ -6,7 +6,6 @@ from decimal import Decimal
 from PIL import Image, ImageOps
 
 # TODO: Something is broken with applyTool + the depth stored in state. Make state just plane index.
-# TODO: Cache trace connection pathes and their absence during findFreeConnection
 # TODO: If a connection cannot be found, consider a different followup trace during sorting
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
@@ -378,7 +377,7 @@ def findFreeConnection(args, z, start, end, may_cut_map):
     return None
 
 
-def connectTraces(args, z, traces, may_cut_map):
+def connectTraces(args, z, traces, may_cut_map, connection_cache):
     result = []
     if not traces:
         return result
@@ -390,7 +389,13 @@ def connectTraces(args, z, traces, may_cut_map):
         progress = progress + 1
         print("\x1B[1G...", progress, "  \x1B[1F")
 
-        connection = findFreeConnection(args, z, last[-1], trace[0], may_cut_map)
+        connection_identifier = (last[-1]['x'], last[-1]['y'], trace[0]['x'], trace[0]['y'])
+        if connection_identifier not in connection_cache:
+            connection = findFreeConnection(args, z, last[-1], trace[0], may_cut_map)
+            connection_cache[connection_identifier] = connection
+        else:
+            connection = connection_cache[connection_identifier]
+
         if connection:
             last = last + connection[1:-2] + trace
         else:
@@ -493,10 +498,11 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
     print("Traces considered: ", len(plane_traces))
     plane_traces = sortTraces(args, plane_traces)
     last_relevant = -1
+    connection_cache = {}
     while last_relevant != len(plane_traces):
         print("Traces relevant: ", len(plane_traces))
         last_relevant = len(plane_traces)
-        plane_traces = connectTraces(args, z, plane_traces, may_cut_map)
+        plane_traces = connectTraces(args, z, plane_traces, may_cut_map, connection_cache)
         plane_traces = sortTraces(args, plane_traces)
 
     print("Traces to emit: ", len(plane_traces))
