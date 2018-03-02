@@ -30,6 +30,11 @@ class PythonImage(object):
         self.img.putdata(self.data)
         return PythonImage(self.img.copy())
 
+    def clone(self):
+        clone = PythonImage(self.img.copy())
+        clone.data = list(self.data)
+        return clone
+
     def show(self):
         self.img.putdata(self.data)
         return self.img.show()
@@ -60,6 +65,23 @@ class BooleanImage(PythonImage):
 def formatFloat(args, f):
     d = (Decimal(f) / Decimal(args.str_precision)).quantize(1) * Decimal(args.str_precision)
     return d.quantize(Decimal(1)) if d == d.to_integral() else d.normalize()
+
+
+def filterTrace(trace, distance):
+    i = 1
+    while i < len(trace) - 1:
+        dx = trace[i - 1]['x'] - trace[i + 1]['x']
+        dy = trace[i - 1]['y'] - trace[i + 1]['y']
+        if dx * dx <= 1 and dy * dy <= 1:
+            ds = distance.getpixel((trace[i - 1]['x'], trace[i - 1]['y']))
+            dm = distance.getpixel((trace[i    ]['x'], trace[i    ]['y']))
+            de = distance.getpixel((trace[i + 1]['x'], trace[i + 1]['y']))
+            if ds < dm and de < dm:
+                trace = trace[:i] + trace[i + 1:]
+                continue
+        i = i + 1
+
+    return trace
 
 
 def optimizeTrace(trace):
@@ -143,7 +165,7 @@ def toolEdge(shape):
     return list(edge)
 
 
-def applyTool(state, distance, z, shape, pos):
+def applyTool(state, distance, z, shape, pos, distance_map):
     useful = False
 
     state_data = state.data
@@ -165,9 +187,23 @@ def applyTool(state, distance, z, shape, pos):
             state_data[idx] = z
             useful = True
 
-    for n in NEIGHBOURS_AND_SELF:
-        p = (pos[0] + n[0], pos[1] + n[1])
+    surface = distance_map.getpixel(pos)[1]
+    base_distance = distance.getpixel(pos)
+    cutoff_distance = base_distance + 2
+
+    queue = set()
+    queue.add(pos)
+    while queue:
+        p = queue.pop()
+        if distance_map.getpixel(p)[1] != surface:
+            continue
+        d = distance.getpixel(p)
+        if d < base_distance or d > cutoff_distance:
+            continue
+
         distance.putpixel(p, 0)
+        for n in NEIGHBOURS:
+            queue.add((p[0] + n[0], p[1] + n[1]))
 
     return useful
 
@@ -409,6 +445,34 @@ def connectTraces(args, z, traces, may_cut_map, connection_cache):
     return result
     
 
+def linearizeTrace(args, trace):
+    i = 1
+    while i < len(trace) - 1:
+        dx_before = trace[i - 1]['x'] - trace[i]['x']
+        dy_before = trace[i - 1]['y'] - trace[i]['y']
+        len_before = (dx_before * dx_before + dy_before * dy_before) ** 0.5
+        if not len_before:
+            trace = trace[:i] + trace[i + 1:]
+            continue
+        dx_before /= len_before
+        dy_before /= len_before
+
+        dx_after = trace[i]['x'] - trace[i + 1]['x']
+        dy_after = trace[i]['y'] - trace[i + 1]['y']
+        len_after = (dx_after * dx_after + dy_after * dy_after) ** 0.5
+        if not len_after:
+            continue
+        dx_after /= len_after
+        dy_after /= len_after
+
+        if abs(dx_before - dx_after) < 1e-6 and abs(dy_before - dy_after) < 1e-6:
+            trace = trace[:i] + trace[i + 1:]
+            continue
+        i = i + 1
+
+    return trace
+
+
 def buildMayCutMap(distance, distance_to_cut, all_coords):
     may_cut = BooleanImage(distance)
     may_cut.data = list(map(lambda v: distance_to_cut <= v, distance.data))
@@ -423,12 +487,14 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
 
     initDistanceMap(target, state, distance, image_cutoff, all_coords)
     buildDistanceMap(distance, all_coords)
+    distance_map = distance.clone()
 
     for q in all_idx:
         distance_data[q] = distance_data[q][0] ** 0.5
 
     distance_to_cut = (diameter / 2) / args.precision
     may_cut_map = buildMayCutMap(distance, distance_to_cut, all_coords)
+    original_distance = distance.clone()
 
     any_at_distance = False
 
@@ -467,7 +533,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         any_at_distance = True
 
         pos = start
-        useful = applyTool(state, distance, z, tool_shape, pos)
+        useful = applyTool(state, distance, z, tool_shape, pos, distance_map)
         trace_steps = []
         trace_steps.append({
             'x': start[0],
@@ -477,7 +543,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         while True:
             step = None
             minimum = 999999999
-            for offset in NEIGHBOURS2:
+            for offset in NEIGHBOURS:
                 p = (pos[0] + offset[0], pos[1] + offset[1])
                 pdist = distance_data[p[0] + distance_width * p[1]]
                 if pdist >= distance_to_cut and pdist < distance_to_cut + 2 and pdist < minimum:
@@ -489,14 +555,16 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
                 break
 
             pos = step
-            useful = applyTool(state, distance, z, tool_shape, pos)
+            useful = applyTool(state, distance, z, tool_shape, pos, distance_map)
             trace_steps.append({
                 'x': pos[0],
                 'y': pos[1],
                 'useful': useful,
             })
 
-        plane_traces.append(optimizeTrace(trace_steps))
+        trace_steps = filterTrace(trace_steps, original_distance)
+        trace_steps = optimizeTrace(trace_steps)
+        plane_traces.append(trace_steps)
 
     print("Traces considered: ", len(plane_traces))
     plane_traces = sortTraces(args, plane_traces)
@@ -510,6 +578,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
 
     print("Traces to emit: ", len(plane_traces))
     for trace in plane_traces:
+        trace = linearizeTrace(args, trace)
         emitTrace(args, z=z, trace=trace, out=out)
 
 
