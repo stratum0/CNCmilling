@@ -5,6 +5,9 @@ import argparse
 from decimal import Decimal
 from PIL import Image, ImageOps
 
+# TODO: Run final simulation pass and allow for variable movement rate trying to create
+#       constant material volume / second.
+
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
 NEIGHBOURS2 = [(x, y) for x in range(-2, 3) for y in range(-2, 3) if (x, y) not in NEIGHBOURS_AND_SELF]
