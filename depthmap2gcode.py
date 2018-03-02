@@ -187,7 +187,11 @@ def applyTool(state, distance, z, shape, pos, distance_map):
             state_data[idx] = z
             useful = True
 
-    surface = distance_map.getpixel(pos)[1]
+    distance_data = distance.data
+    distance_width = distance.width
+    distance_map_data = distance_map.data
+
+    surface = distance_map_data[pos[0] + distance_width * pos[1]][1]
     base_distance = distance.getpixel(pos)
     cutoff_distance = base_distance + 2
 
@@ -195,13 +199,15 @@ def applyTool(state, distance, z, shape, pos, distance_map):
     queue.add(pos)
     while queue:
         p = queue.pop()
-        if distance_map.getpixel(p)[1] != surface:
-            continue
-        d = distance.getpixel(p)
+
+        idx = p[0] + distance_width * p[1]
+        d = distance_data[idx]
         if d < base_distance or d > cutoff_distance:
             continue
+        if distance_map_data[idx][1] != surface:
+            continue
 
-        distance.putpixel(p, 0)
+        distance_data[idx] = 0
         for n in NEIGHBOURS:
             queue.add((p[0] + n[0], p[1] + n[1]))
 
