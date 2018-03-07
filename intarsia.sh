@@ -15,7 +15,7 @@ PRECISION="${PRECISION:-0.05}"
   "$NAME".png
 
 convert "$NAME"-background-cut.png -flop "$NAME"-background-cut-mirror.png 
-convert "$NAME"-background-cut-mirror.png -blur 6x3 -level 253,254 -colors 2 \
+convert "$NAME"-background-cut-mirror.png -blur 6x3 -level 98%,99% -colors 2 \
   "$NAME"-background-cut-padded.png
 
 ./depthmap2gcode.py --depth 3 --width "$SIZE" --height "$SIZE" --planes 1 --zspace 2 \
