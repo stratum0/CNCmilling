@@ -8,6 +8,7 @@ from PIL import Image, ImageOps
 # TODO: Run final simulation pass and allow for variable movement rate trying to create
 #       constant material volume / second.
 # TODO: When using multiple tools, don't even generate the useless inner small-tool traces.
+# TODO: Handle tool padding via deltas on image_cutoff and distance_to_cut.
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
@@ -715,6 +716,7 @@ def main():
             padding_z = float(padding) / args.depth * 255
             pad_accum = 0
             for j in range(0, padding_pixels):
+                print("\x1B[1G...", j, "/", padding_pixels, "  \x1B[1F")
                 pad_accum += padding_z / padding_pixels
                 z_pad = 0
                 if pad_accum > 0:
@@ -722,16 +724,24 @@ def main():
                     pad_accum -= z_pad
 
                 new_target = tool_target.copy()
-                for p in [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]:
-                    maximum = tool_target.getpixel(p) + z_pad
-                    for n in NEIGHBOURS:
-                        pn = (p[0] + n[0], p[1] + n[1])
-                        if(pn[0] < 0 or pn[0] >= target.size[0] or
-                            pn[1] < 0 or pn[1] >= target.size[1]):
-                            maximum = 256
-                        else:
-                            maximum = max(maximum, tool_target.getpixel(pn))
-                    new_target.putpixel(p, maximum)
+                new_target_data = new_target.data
+                tool_target_data = tool_target.data
+                tool_target_width = tool_target.width
+                tool_target_height = tool_target.height
+                for y in range(0, tool_target_height):
+                    print("\x1B[1G...", y, "/", tool_target_height, "  \x1B[1F")
+                    for x in range(0, tool_target_width):
+                        idx = x + y * tool_target_width
+                        maximum = tool_target_data[idx] + z_pad
+                        for n in NEIGHBOURS:
+                            nx = x + n[0]
+                            ny = y + n[1]
+                            if(nx < 0 or nx >= tool_target_width or
+                                ny < 0 or ny >= tool_target_height):
+                                maximum = 256
+                            else:
+                                maximum = max(maximum, tool_target_data[nx + tool_target_width * ny])
+                        new_target_data[idx] = maximum
                 tool_target = new_target
 
         with open(outfile, 'w') as out:
