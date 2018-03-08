@@ -7,6 +7,7 @@ from PIL import Image, ImageOps
 
 # TODO: Run final simulation pass and allow for variable movement rate trying to create
 #       constant material volume / second.
+# TODO: When using multiple tools, don't even generate the useless inner small-tool traces.
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
@@ -41,14 +42,15 @@ class PythonImage(object):
 
 
 class DistanceImage(PythonImage):
-    def show(self, height):
+    def show(self, heights):
         img = Image.new('RGB', self.size)
         for p in [(x, y) for x in range(0, self.img.size[0]) for y in range(0, self.img.size[1])]:
-            dist = self.getpixel(p)[0]
+            dist = self.getpixel(p)
+            marked = [h for h in heights if dist > h and dist < h + 2]
             col = (
-                int(dist),
+                int(dist / 20),
                 255 if dist > 14 and dist < 16 else 0,
-                255 if dist > height and dist < height + 2 else 0,
+                255 if marked else 0,
             )
             img.putpixel(p, col)
         img.show()
@@ -192,11 +194,14 @@ def applyTool(state, distance, z, shape, pos, distance_map):
     distance_map_data = distance_map.data
 
     surface = distance_map_data[pos[0] + distance_width * pos[1]][1]
-    base_distance = distance.getpixel(pos)
+    base_distance = distance.getpixel(pos) + 1
     cutoff_distance = base_distance + 2
 
     queue = set()
     queue.add(pos)
+    idx = pos[0] + distance_width * pos[1]
+    distance_data[idx] = 0
+
     while queue:
         p = queue.pop()
 
@@ -493,6 +498,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
 
     initDistanceMap(target, state, distance, image_cutoff, all_coords)
     buildDistanceMap(distance, all_coords)
+
     distance_map = distance.clone()
 
     for q in all_idx:
