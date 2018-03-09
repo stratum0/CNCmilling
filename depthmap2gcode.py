@@ -40,10 +40,27 @@ class PythonImage(object):
         return self.img.show()
 
 
-class DistanceImage(PythonImage):
+class DistanceImage(object):
+    def __init__(self, size):
+        self.size = size
+        self.width = self.size[0]
+        self.height = self.size[1]
+        self.data = [None for x in range(0, self.width) for y in range(0, self.height)]
+
+    def getpixel(self, p):
+        return self.data[p[0] + self.width * p[1]]
+
+    def putpixel(self, p, v):
+        self.data[p[0] + self.width * p[1]] = v
+
+    def clone(self):
+        clone = DistanceImage(self.size)
+        clone.data = list(self.data)
+        return clone
+
     def show(self, heights):
         img = Image.new('RGB', self.size)
-        for p in [(x, y) for x in range(0, self.img.size[0]) for y in range(0, self.img.size[1])]:
+        for p in [(x, y) for x in range(0, self.width) for y in range(0, self.height)]:
             dist = self.getpixel(p)
             marked = [h for h in heights if dist > h and dist < h + 2]
             col = (
@@ -166,7 +183,7 @@ def toolEdge(shape):
     return list(edge)
 
 
-def applyTool(state, distance, z, shape, pos, distance_map):
+def applyTool(state, distance, z, shape, pos, surface):
     useful = False
 
     state_data = state.data
@@ -189,12 +206,12 @@ def applyTool(state, distance, z, shape, pos, distance_map):
             useful = True
 
     distance_data = distance.data
+    surface_data = surface.data
     distance_width = distance.width
-    distance_map_data = distance_map.data
 
-    surface = distance_map_data[pos[0] + distance_width * pos[1]][1]
-    sdir_x = surface[0] - px
-    sdir_y = surface[1] - py
+    nearest = surface_data[pos[0] + distance_width * pos[1]]
+    sdir_x = nearest[0] - px
+    sdir_y = nearest[1] - py
     sdir_len = (sdir_x * sdir_x + sdir_y * sdir_y) ** 0.5
 
     cutoff_distance = distance.getpixel(pos) + 2
@@ -211,7 +228,7 @@ def applyTool(state, distance, z, shape, pos, distance_map):
             d = distance_data[idx]
             if d == 0 or d > cutoff_distance:
                 continue
-            if distance_map_data[idx][1] != surface:
+            if surface_data[idx] != nearest:
                 continue
 
             pdir_x = pn[0] - px
@@ -225,9 +242,10 @@ def applyTool(state, distance, z, shape, pos, distance_map):
     return useful
 
 
-def buildDistanceMap(distance, all_coords):
+def buildDistanceMap(distance, surface, all_coords):
     # So performance, much wow...
     distance_data = distance.data
+    surface_data = surface.data
     distance_width = distance.width
     distance_height = distance.height
 
@@ -236,7 +254,7 @@ def buildDistanceMap(distance, all_coords):
     max_stratum = 0
     strata = {}
     for p in all_coords:
-        dist = distance_data[p[0] + distance_width * p[1]][0]
+        dist = distance_data[p[0] + distance_width * p[1]]
         if dist >= 0 and dist < 99999999:
             disti = int(dist)
             if disti not in strata:
@@ -260,7 +278,7 @@ def buildDistanceMap(distance, all_coords):
             continue
 
         checked.add(p)
-        nearest = distance_data[p[0] + distance_width * p[1]][1]
+        nearest = surface_data[p[0] + distance_width * p[1]]
         if not nearest:
             continue
 
@@ -276,8 +294,9 @@ def buildDistanceMap(distance, all_coords):
             distP = dx * dx + dy * dy
             idx = x + distance_width * y
 
-            if distP < distance_data[idx][0]:
-                distance_data[idx] = (distP, nearest)
+            if distP < distance_data[idx]:
+                distance_data[idx] = distP
+                surface_data[idx] = nearest
                 np = (x, y)
                 if np in checked:
                     checked.remove(np)
@@ -290,20 +309,23 @@ def buildDistanceMap(distance, all_coords):
                     next_stratum = distPi
 
 
-def initDistanceMap(target, state, distance, image_cutoff, all_coords):
+def initDistanceMap(target, state, distance, surface, image_cutoff, all_coords):
     # So performance, much wow...
     distance_data = distance.data
+    surface_data = surface.data
     distance_width = distance.width
 
     for p in all_coords:
         t = target.getpixel(p)
+        idx = p[0] + distance_width * p[1]
 
         if(t >= image_cutoff or
             p[0] <= 0 or p[0] >= state.size[0] - 1 or
             p[1] <= 0 or p[1] >= state.size[1] - 1):
-            distance_data[p[0] + distance_width * p[1]] = (0, p)
+            distance_data[idx] = 0
+            surface_data[idx] = p
         else:
-            distance_data[p[0] + distance_width * p[1]] = (999999999, None)
+            distance_data[idx] = 999999999
 
 
 def sortTraces(args, traces):
@@ -515,18 +537,17 @@ def buildMayCutMap(distance, distance_to_cut, all_coords):
 
 
 def generateSweep(target, state, args, diameter, diameter_before, padding, out, image_cutoff, z, all_coords, all_idx, tool_shape):
-    distance = DistanceImage(Image.new('I', target.size))
+    distance = DistanceImage(target.size)
+    surface = DistanceImage(target.size)
     # So performance, much wow...
     distance_data = distance.data
     distance_width = distance.width
 
-    initDistanceMap(target, state, distance, image_cutoff, all_coords)
-    buildDistanceMap(distance, all_coords)
-
-    distance_map = distance.clone()
+    initDistanceMap(target, state, distance, surface, image_cutoff, all_coords)
+    buildDistanceMap(distance, surface, all_coords)
 
     for q in all_idx:
-        distance_data[q] = distance_data[q][0] ** 0.5
+        distance_data[q] = distance_data[q] ** 0.5
 
     distance_to_cut = (diameter / 2 + padding) / args.precision
     distance_stop = None
@@ -577,7 +598,7 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out, 
         any_at_distance = True
 
         pos = start
-        useful = applyTool(state, distance, z, tool_shape, pos, distance_map)
+        useful = applyTool(state, distance, z, tool_shape, pos, surface)
         trace_steps = []
         trace_steps.append({
             'x': start[0],
@@ -599,7 +620,7 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out, 
                 break
 
             pos = step
-            useful = applyTool(state, distance, z, tool_shape, pos, distance_map)
+            useful = applyTool(state, distance, z, tool_shape, pos, surface)
             trace_steps.append({
                 'x': pos[0],
                 'y': pos[1],
