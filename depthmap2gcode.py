@@ -7,7 +7,6 @@ from PIL import Image, ImageOps
 
 # TODO: Run final simulation pass and allow for variable movement rate trying to create
 #       constant material volume / second.
-# TODO: Share distance maps across tools.
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
