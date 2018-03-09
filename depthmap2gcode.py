@@ -631,7 +631,7 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out, 
         trace_steps = optimizeTrace(trace_steps)
         plane_traces.append(trace_steps)
 
-    print("Traces considered: ", len(plane_traces))
+    print("\x1B[2KTraces considered: ", len(plane_traces))
     plane_traces = sortTraces(args, plane_traces)
     last_relevant = -1
     connection_cache = {}
@@ -675,7 +675,7 @@ def generateCommands(target, state, padding, args, diameter, diameter_before, ou
     for plane in cut_early + list(reversed(cut_late)):
         image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1)) + padding * 255.0 / args.depth
         z = (plane + 1) * (args.depth / args.planes)
-        print("plane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
+        print("\x1B[2Kplane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
 
         generateSweep(target=target, state=state, args=args, diameter=diameter,
                 diameter_before=diameter_before, padding=padding,
