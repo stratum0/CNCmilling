@@ -8,7 +8,7 @@ from PIL import Image, ImageOps
 # TODO: Run final simulation pass and allow for variable movement rate trying to create
 #       constant material volume / second.
 # TODO: When using multiple tools, don't even generate the useless inner small-tool traces.
-# TODO: Handle tool padding via deltas on image_cutoff and distance_to_cut.
+# TODO: Share distance maps across tools.
 
 NEIGHBOURS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 NEIGHBOURS_AND_SELF = NEIGHBOURS + [(0, 0)]
@@ -195,7 +195,7 @@ def applyTool(state, distance, z, shape, pos, distance_map):
     distance_map_data = distance_map.data
 
     surface = distance_map_data[pos[0] + distance_width * pos[1]][1]
-    base_distance = distance.getpixel(pos) + 1
+    base_distance = distance.getpixel(pos) + .999999
     cutoff_distance = base_distance + 2
 
     queue = set()
@@ -458,30 +458,48 @@ def connectTraces(args, z, traces, may_cut_map, connection_cache):
     
 
 def linearizeTrace(args, trace):
+    if len(trace) <= 2:
+        return trace
+
+    result = [trace[0]]
+
     i = 1
     while i < len(trace) - 1:
-        dx_before = trace[i - 1]['x'] - trace[i]['x']
-        dy_before = trace[i - 1]['y'] - trace[i]['y']
-        len_before = (dx_before * dx_before + dy_before * dy_before) ** 0.5
-        if not len_before:
-            trace = trace[:i] + trace[i + 1:]
-            continue
-        dx_before /= len_before
-        dy_before /= len_before
+        print("\x1B[1G...", i, "/", len(trace), "  \x1B[1F")
 
-        dx_after = trace[i]['x'] - trace[i + 1]['x']
-        dy_after = trace[i]['y'] - trace[i + 1]['y']
-        len_after = (dx_after * dx_after + dy_after * dy_after) ** 0.5
-        if not len_after:
-            continue
-        dx_after /= len_after
-        dy_after /= len_after
+        dx = trace[i]['x'] - result[-1]['y']
+        dy = trace[i]['y'] - result[-1]['y']
+        len_ = (dx * dx + dy * dy) ** 0.5
 
-        if abs(dx_before - dx_after) < 1e-6 and abs(dy_before - dy_after) < 1e-6:
-            trace = trace[:i] + trace[i + 1:]
+        if not len_:
+            i += 1
             continue
-        i = i + 1
 
+        dx /= len_
+        dy /= len_
+
+        while i < len(trace) - 1:
+            n = i + 1
+            ndx = trace[n]['x'] - result[-1]['x']
+            ndy = trace[n]['y'] - result[-1]['y']
+            nlen = (ndx * ndx + ndy * ndy) ** 0.5
+            if not nlen:
+                i += 1
+                continue
+
+            ndx /= nlen
+            ndy /= nlen
+
+            if abs(dx - ndx) < 1e-6 and abs(dy - ndy) < 1e-6:
+                i = n
+            else:
+                break
+
+        result.append(trace[i])
+        i += 1
+
+    if i < len(trace):
+        result.append(trace[i])
     return trace
 
 
@@ -491,7 +509,7 @@ def buildMayCutMap(distance, distance_to_cut, all_coords):
     return may_cut
 
 
-def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coords, all_idx, tool_shape):
+def generateSweep(target, state, args, diameter, padding, out, image_cutoff, z, all_coords, all_idx, tool_shape):
     distance = DistanceImage(Image.new('I', target.size))
     # So performance, much wow...
     distance_data = distance.data
@@ -505,7 +523,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
     for q in all_idx:
         distance_data[q] = distance_data[q][0] ** 0.5
 
-    distance_to_cut = (diameter / 2) / args.precision
+    distance_to_cut = (diameter / 2 + padding) / args.precision
     may_cut_map = buildMayCutMap(distance, distance_to_cut, all_coords)
     original_distance = distance.clone()
 
@@ -595,7 +613,7 @@ def generateSweep(target, state, args, diameter, out, image_cutoff, z, all_coord
         emitTrace(args, z=z, trace=trace, out=out)
 
 
-def generateCommands(target, state, args, diameter, out):
+def generateCommands(target, state, padding, args, diameter, out):
     planes = list(range(0, args.planes))
     cut_early = []
     cut_late = []
@@ -621,11 +639,11 @@ def generateCommands(target, state, args, diameter, out):
     state_width = state.size[0]
     all_idx = list(map(lambda c: c[0] + state_width * c[1], all_coords))
     for plane in cut_early + list(reversed(cut_late)):
-        image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1))
+        image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1)) + padding * 255.0 / args.depth
         z = (plane + 1) * (args.depth / args.planes)
         print("plane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
 
-        generateSweep(target=target, state=state, args=args, diameter=diameter,
+        generateSweep(target=target, state=state, args=args, diameter=diameter, padding=padding,
                 out=out, image_cutoff=image_cutoff, z=z, all_coords=all_coords, all_idx=all_idx,
                 tool_shape=tool_shape)
 
@@ -707,45 +725,9 @@ def main():
             parser.print_help()
             print("\nCould not parse output file from --tool %s" % tool, file=sys.stderr)
             sys.exit(1)
-
-        tool_target = target
-        if padding:
-            print("Padding target geometry for coarse tool run")
-            tool_target = target.copy()
-            padding_pixels = 1 + int(padding / args.precision)
-            padding_z = float(padding) / args.depth * 255
-            pad_accum = 0
-            for j in range(0, padding_pixels):
-                print("\x1B[1G...", j, "/", padding_pixels, "  \x1B[1F")
-                pad_accum += padding_z / padding_pixels
-                z_pad = 0
-                if pad_accum > 0:
-                    z_pad = int(1 + pad_accum)
-                    pad_accum -= z_pad
-
-                new_target = tool_target.copy()
-                new_target_data = new_target.data
-                tool_target_data = tool_target.data
-                tool_target_width = tool_target.width
-                tool_target_height = tool_target.height
-                for y in range(0, tool_target_height):
-                    print("\x1B[1G...", y, "/", tool_target_height, "  \x1B[1F")
-                    for x in range(0, tool_target_width):
-                        idx = x + y * tool_target_width
-                        maximum = tool_target_data[idx] + z_pad
-                        for n in NEIGHBOURS:
-                            nx = x + n[0]
-                            ny = y + n[1]
-                            if(nx < 0 or nx >= tool_target_width or
-                                ny < 0 or ny >= tool_target_height):
-                                maximum = 256
-                            else:
-                                maximum = max(maximum, tool_target_data[nx + tool_target_width * ny])
-                        new_target_data[idx] = maximum
-                tool_target = new_target
-
         with open(outfile, 'w') as out:
-            generateCommands(target=tool_target, state=state, args=args, diameter=float(diameter), out=out)
+            generateCommands(target=target, state=state, padding=padding,
+                    args=args, diameter=float(diameter), out=out)
 
     depth_map = {
         0: 255,
