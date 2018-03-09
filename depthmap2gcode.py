@@ -172,15 +172,21 @@ def toolPixels(args, diameter):
 
 def toolEdge(shape):
     tool = set(shape)
-    edge = set()
+    outer = set()
+    inner = set()
 
     for p in shape:
         for n in NEIGHBOURS:
             e = (p[0] + n[0], p[1] + n[1])
             if e not in tool:
-                edge.add(e)
+                outer.add(e)
 
-    return list(edge)
+    for p in outer:
+        for n in NEIGHBOURS:
+            e = (p[0] + n[0], p[1] + n[1])
+            inner.add(e)
+
+    return list(tool & inner)
 
 
 def applyTool(state, distance, z, shape, pos, surface):
@@ -536,7 +542,8 @@ def buildMayCutMap(distance, distance_to_cut, all_coords):
     return may_cut
 
 
-def generateSweep(target, state, args, diameter, diameter_before, padding, out, image_cutoff, z, all_coords, all_idx, tool_shape):
+def generateSweep(target, state, args, diameter, diameter_before, padding, out,
+        image_cutoff, z, all_coords, all_idx, tool_shape, tool_edge):
     distance = DistanceImage(target.size)
     surface = DistanceImage(target.size)
     # So performance, much wow...
@@ -620,7 +627,7 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out, 
                 break
 
             pos = step
-            useful = applyTool(state, distance, z, tool_shape, pos, surface)
+            useful = applyTool(state, distance, z, tool_edge, pos, surface)
             trace_steps.append({
                 'x': pos[0],
                 'y': pos[1],
@@ -669,6 +676,7 @@ def generateCommands(target, state, padding, args, diameter, diameter_before, ou
         next_cut = z
 
     tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
+    tool_edge = toolEdge(tool_shape)
     all_coords = [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]
     state_width = state.size[0]
     all_idx = list(map(lambda c: c[0] + state_width * c[1], all_coords))
@@ -680,7 +688,7 @@ def generateCommands(target, state, padding, args, diameter, diameter_before, ou
         generateSweep(target=target, state=state, args=args, diameter=diameter,
                 diameter_before=diameter_before, padding=padding,
                 out=out, image_cutoff=image_cutoff, z=z, all_coords=all_coords, all_idx=all_idx,
-                tool_shape=tool_shape)
+                tool_shape=tool_shape, tool_edge=tool_edge)
 
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
 
