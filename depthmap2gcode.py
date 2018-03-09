@@ -248,7 +248,7 @@ def buildDistanceMap(distance, all_coords):
     while True:
         while not strata.get(next_stratum):
             next_stratum = next_stratum + 1
-            print("\x1B[1G...", next_stratum, "  \x1B[1F")
+            print("\x1B[1Gmapping distance... ", next_stratum, "  \x1B[1F")
             if next_stratum > max_stratum:
                 running = False
                 break
@@ -443,7 +443,7 @@ def connectTraces(args, z, traces, may_cut_map, connection_cache):
     progress = 0
     for trace in traces:
         progress = progress + 1
-        print("\x1B[1G...", progress, "  \x1B[1F")
+        print("\x1B[1Gconnecting traces...", progress, "  \x1B[1F")
 
         connection_identifier = (last[-1]['x'], last[-1]['y'], trace[0]['x'], trace[0]['y'])
         if connection_identifier not in connection_cache:
@@ -470,7 +470,7 @@ def linearizeTrace(args, trace):
 
     i = 1
     while i < len(trace) - 1:
-        print("\x1B[1G...", i, "/", len(trace), "  \x1B[1F")
+        print("\x1B[1Glinearizing traces...", i, "/", len(trace), "  \x1B[1F")
 
         dx = trace[i]['x'] - result[-1]['y']
         dy = trace[i]['y'] - result[-1]['y']
@@ -548,6 +548,8 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out, 
     while True:
         minimum = 99999999999
         start = None
+
+        print("\x1B[1Gtracing...", distance_to_cut, "  \x1B[1F")
 
         for i in [0, 1, 2]:
             for q in distance_strata[int(distance_to_cut) + i]:
