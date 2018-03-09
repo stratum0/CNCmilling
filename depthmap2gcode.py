@@ -195,27 +195,34 @@ def applyTool(state, distance, z, shape, pos, distance_map):
     distance_map_data = distance_map.data
 
     surface = distance_map_data[pos[0] + distance_width * pos[1]][1]
-    base_distance = distance.getpixel(pos) + .999999
-    cutoff_distance = base_distance + 2
+    sdir_x = surface[0] - px
+    sdir_y = surface[1] - py
+    sdir_len = (sdir_x * sdir_x + sdir_y * sdir_y) ** 0.5
+
+    cutoff_distance = distance.getpixel(pos) + 2
 
     queue = set()
     queue.add(pos)
-    idx = pos[0] + distance_width * pos[1]
-    distance_data[idx] = 0
-
     while queue:
         p = queue.pop()
+        distance_data[p[0] + distance_width * p[1]] = 0
 
-        idx = p[0] + distance_width * p[1]
-        d = distance_data[idx]
-        if d < base_distance or d > cutoff_distance:
-            continue
-        if distance_map_data[idx][1] != surface:
-            continue
-
-        distance_data[idx] = 0
         for n in NEIGHBOURS:
-            queue.add((p[0] + n[0], p[1] + n[1]))
+            pn = (p[0] + n[0], p[1] + n[1])
+            idx = pn[0] + distance_width * pn[1]
+            d = distance_data[idx]
+            if d == 0 or d > cutoff_distance:
+                continue
+            if distance_map_data[idx][1] != surface:
+                continue
+
+            pdir_x = pn[0] - px
+            pdir_y = pn[1] - py
+            pdir_len = (pdir_x * pdir_x + pdir_y * pdir_y) ** 0.5
+            if pdir_x * sdir_x + pdir_y * sdir_y >= -0.7 * pdir_len * sdir_len:
+                continue
+
+            queue.add(pn)
 
     return useful
 
