@@ -265,7 +265,6 @@ def buildDistanceMap(distance, surface, all_coords):
             if disti not in strata:
                 strata[disti] = set()
             strata[disti].add(p)
-            max_stratum = min(distance_stop, max(max_stratum, disti))
             max_stratum = max(max_stratum, disti)
 
     running = True
@@ -280,7 +279,11 @@ def buildDistanceMap(distance, surface, all_coords):
             break
 
         p = strata[next_stratum].pop()
-        nearest = surface_data[p[0] + distance_width * p[1]]
+        idx = p[0] + distance_width * p[1]
+        if distance_data[idx] < next_stratum:
+            continue
+
+        nearest = surface_data[idx]
         if not nearest:
             continue
 
@@ -304,7 +307,7 @@ def buildDistanceMap(distance, surface, all_coords):
                 if distPi not in strata:
                     strata[distPi] = set()
                     max_stratum = max(max_stratum, distPi)
-                strata[distPi].append(np)
+                strata[distPi].add(np)
                 if distPi < next_stratum:
                     next_stratum = distPi
 
