@@ -248,16 +248,12 @@ def applyTool(state, distance, z, shape, pos, surface):
     return useful
 
 
-def buildDistanceMap(distance, surface, distance_stop, all_coords):
+def buildDistanceMap(distance, surface, all_coords):
     # So performance, much wow...
     distance_data = distance.data
     surface_data = surface.data
     distance_width = distance.width
     distance_height = distance.height
-    if distance_stop is None:
-        distance_stop = 99999999
-    else:
-        distance_stop = int(distance_stop + 1)
 
     next_stratum = 0
     max_stratum = 0
@@ -270,6 +266,7 @@ def buildDistanceMap(distance, surface, distance_stop, all_coords):
                 strata[disti] = set()
             strata[disti].add(p)
             max_stratum = min(distance_stop, max(max_stratum, disti))
+            max_stratum = max(max_stratum, disti)
 
     running = True
     while True:
@@ -306,8 +303,8 @@ def buildDistanceMap(distance, surface, distance_stop, all_coords):
                 distPi = int(distP)
                 if distPi not in strata:
                     strata[distPi] = set()
-                    max_stratum = min(distance_stop, max(max_stratum, distPi))
-                strata[distPi].add(np)
+                    max_stratum = max(max_stratum, distPi)
+                strata[distPi].append(np)
                 if distPi < next_stratum:
                     next_stratum = distPi
 
@@ -547,17 +544,16 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out,
     distance_data = distance.data
     distance_width = distance.width
 
-    distance_stop = None
-    if diameter_before:
-        distance_stop = diameter_before / args.precision
-
     initDistanceMap(target, state, distance, surface, image_cutoff, all_coords)
-    buildDistanceMap(distance, surface, distance_stop, all_coords)
+    buildDistanceMap(distance, surface, all_coords)
 
     for q in all_idx:
         distance_data[q] = distance_data[q] ** 0.5
 
     distance_to_cut = (diameter / 2 + padding) / args.precision
+    distance_stop = None
+    if diameter_before:
+        distance_stop = diameter_before / args.precision
     may_cut_map = buildMayCutMap(distance, distance_to_cut, all_coords)
     original_distance = distance.clone()
 
@@ -566,8 +562,7 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out,
     distance_strata = list(map(lambda i: [], range(0, distance_width + distance.height + 3)))
     for q in all_idx:
         d = int(distance_data[q])
-        if d < len(distance_strata):
-            distance_strata[d].append(q)
+        distance_strata[d].append(q)
 
     plane_traces = []
 
