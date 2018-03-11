@@ -536,7 +536,7 @@ def buildMayCutMap(distance, distance_to_cut, all_coords):
     return may_cut
 
 
-def generateSweep(target, state, args, diameter, diameter_before, padding, out,
+def generateSweep(target, state, args, diameter, padding, out,
         image_cutoff, z, all_coords, all_idx, tool_shape, tool_edge):
     distance = DistanceImage(target.size)
     surface = DistanceImage(target.size)
@@ -551,9 +551,6 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out,
         distance_data[q] = distance_data[q] ** 0.5
 
     distance_to_cut = (diameter / 2 + padding) / args.precision
-    distance_stop = None
-    if diameter_before:
-        distance_stop = diameter_before / args.precision
     may_cut_map = buildMayCutMap(distance, distance_to_cut, all_coords)
     original_distance = distance.clone()
 
@@ -592,8 +589,6 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out,
             else:
                 any_at_distance = False
                 distance_to_cut += (diameter / 2 - args.overlap) / args.precision
-                if distance_stop and distance_stop < distance_to_cut:
-                    break
                 continue
 
         any_at_distance = True
@@ -648,7 +643,7 @@ def generateSweep(target, state, args, diameter, diameter_before, padding, out,
         emitTrace(args, z=z, trace=trace, out=out)
 
 
-def generateCommands(target, state, padding, args, diameter, diameter_before, out):
+def generateCommands(target, state, padding, args, diameter, out):
     planes = list(range(0, args.planes))
     cut_early = []
     cut_late = []
@@ -679,8 +674,7 @@ def generateCommands(target, state, padding, args, diameter, diameter_before, ou
         z = (plane + 1) * (args.depth / args.planes)
         print("\x1B[2Kplane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
 
-        generateSweep(target=target, state=state, args=args, diameter=diameter,
-                diameter_before=diameter_before, padding=padding,
+        generateSweep(target=target, state=state, args=args, diameter=diameter, padding=padding,
                 out=out, image_cutoff=image_cutoff, z=z, all_coords=all_coords, all_idx=all_idx,
                 tool_shape=tool_shape, tool_edge=tool_edge)
 
@@ -746,7 +740,6 @@ def main():
     target = PythonImage(target)
     state = PythonImage(Image.new('L', target.size, 255))
     state.data = list(map(lambda v: 0.0, state.data))
-    diameter_before = None
 
     for i, tool in enumerate(args.tool):
         parts = tool.split(':')
@@ -765,8 +758,7 @@ def main():
             sys.exit(1)
         with open(outfile, 'w') as out:
             generateCommands(target=target, state=state, padding=padding,
-                    args=args, diameter=float(diameter), diameter_before=diameter_before, out=out)
-            diameter_before = float(diameter)
+                    args=args, diameter=float(diameter), out=out)
 
     depth_map = {
         0: 255,
