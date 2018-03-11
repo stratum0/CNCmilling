@@ -497,7 +497,7 @@ def linearizeTrace(args, trace):
     while i < len(trace) - 1:
         print("\x1B[1Glinearizing traces...", i, "/", len(trace), "  \x1B[1F")
 
-        dx = trace[i]['x'] - result[-1]['y']
+        dx = trace[i]['x'] - result[-1]['x']
         dy = trace[i]['y'] - result[-1]['y']
         len_ = (dx * dx + dy * dy) ** 0.5
 
@@ -530,7 +530,7 @@ def linearizeTrace(args, trace):
 
     if i < len(trace):
         result.append(trace[i])
-    return trace
+    return result
 
 
 def buildMayCutMap(distance, distance_to_cut, all_coords):
