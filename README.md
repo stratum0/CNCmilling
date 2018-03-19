@@ -9,7 +9,7 @@ workon cnc
 This code converts grayscale depth maps to G-code for
 CNC machines.
 
-Simplest case: You have a b/w image and which to engrave
+Simplest case: You have a b/w image and wish to engrave
 some object with it. The code assumes **dark = deep into material, white = top**.
 
 ```
