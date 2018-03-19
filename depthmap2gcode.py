@@ -667,6 +667,9 @@ def generateCommands(target, state, padding, args, diameter, out):
         cut_late.append(plane)
         next_cut = z
 
+    print("G0 Z%s F%s" % (formatFloat(args, args.zspace), formatFloat(args, args.feedrate)), file=out)
+    print("G1 Z%s F%s" % (formatFloat(args, args.zspace), formatFloat(args, args.feedrate)), file=out)
+
     tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
     tool_edge = toolEdge(tool_shape)
     all_coords = [(x, y) for x in range(0, state.size[0]) for y in range(0, state.size[1])]
@@ -719,6 +722,8 @@ def main():
     parser.add_argument('--inverse', dest='inverse', action='store_true', help="""
     Invert image before cutting, i.e. now assume white as deep into material.
     """)
+    parser.add_argument('--feedrate', dest='feedrate', default=400,
+                        help='Feedrate in mm/min.')
     required.add_argument('--tool', metavar='<diameter>:[padding:]outputfile', action='append',
     required=True, help="""
     Specify a G-code output file for a tool of given diameter in mm. Can be specified
