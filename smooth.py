@@ -39,7 +39,7 @@ def main():
         precision = precision / Decimal(10)
 
     with open(args.output, "w") as out:
-        print("G90")
+        print("G90", file=out)
         print("G0 X0 Y0 Z%s" % formatFloat(precision, args.zstart), file=out)
         xpos = 0
         layers = []
@@ -60,6 +60,10 @@ def main():
 
         for z in layers:
             print("G1 Z%s" % formatFloat(precision, z), file=out)
+            print("G1 X%s" % formatFloat(precision, args.width), file=out)
+            print("G1 Y%s" % formatFloat(precision, args.height), file=out)
+            print("G1 X%s" % formatFloat(precision, 0), file=out)
+            print("G1 Y%s" % formatFloat(precision, 0), file=out)
 
             for y in rows:
                 print("G1 Y%s" % formatFloat(precision, y), file=out)

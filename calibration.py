@@ -40,7 +40,7 @@ def main():
     width = args.max
     x = 0
     with open(args.output, "w") as out:
-        print("G90")
+        print("G90", file=out)
 
         while width > args.min - 1e-6:
             print("G0 Z%s" % formatFloat(precision, args.zspace), file=out)
