@@ -25,6 +25,8 @@ def main():
                         help='Area height, in mm')
     required.add_argument('--ystep', dest='ystep', required=True, type=float,
                         help='Raster distance in y, in mm')
+    parser.add_argument('--feedrate', dest='feedrate', default=400,
+                        help='Feedrate in mm/min.')
     required.add_argument('--output', required=True, dest='output', type=str, help="""
     Output file name.
     """)
@@ -40,7 +42,9 @@ def main():
 
     with open(args.output, "w") as out:
         print("G90", file=out)
-        print("G0 X0 Y0 Z%s" % formatFloat(precision, args.zstart), file=out)
+        print("G0 X0 Y0 Z%s F%s" % (
+            formatFloat(precision, args.zstart), formatFloat(precision, args.feedrate)),
+            file=out)
         xpos = 0
         layers = []
         z = args.zstart
@@ -55,11 +59,13 @@ def main():
         while y < args.height:
             rows.append(y)
             y += args.ystep
-        if rows[-1] != args.width:
-            rows.append(args.width)
+        if rows[-1] != args.height:
+            rows.append(args.height)
 
         for z in layers:
-            print("G1 Z%s" % formatFloat(precision, z), file=out)
+            print("G1 Z%s F%s" % (
+                formatFloat(precision, z), formatFloat(precision, args.feedrate)),
+                file=out)
             print("G1 X%s" % formatFloat(precision, args.width), file=out)
             print("G1 Y%s" % formatFloat(precision, args.height), file=out)
             print("G1 X%s" % formatFloat(precision, 0), file=out)
@@ -73,6 +79,9 @@ def main():
                 else:
                     print("G1 X0", file=out)
                     xpos = 0
+
+            print("G0 Z0", file=out)
+            print("G0 X0 Y0", file=out)
 
         print("G0 Z%s" % formatFloat(precision, args.zstart), file=out)
 
