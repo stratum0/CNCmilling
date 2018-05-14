@@ -676,7 +676,7 @@ def generateCommands(target, state, padding, args, diameter, out):
     state_width = state.size[0]
     all_idx = list(map(lambda c: c[0] + state_width * c[1], all_coords))
     for plane in cut_early + list(reversed(cut_late)):
-        image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1)) + padding * 255.0 / args.depth
+        image_cutoff = 255.0 - (plane + 1) * (255.0 / (args.planes + 1)) - padding * 255.0 / args.depth
         z = (plane + 1) * (args.depth / args.planes)
         print("\x1B[2Kplane %d: img %03.3f z %03.3f" % (plane, image_cutoff, z))
 
