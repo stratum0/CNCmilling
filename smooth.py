@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys
 import argparse
@@ -48,7 +48,7 @@ def main():
         xpos = 0
         layers = []
         z = args.zstart
-        while z > args.zstop:
+        while z >= args.zstop:
             layers.append(z)
             z -= args.cutdepth
         if layers[-1] != args.zstop:
@@ -80,7 +80,7 @@ def main():
                     print("G1 X0", file=out)
                     xpos = 0
 
-            print("G0 Z0", file=out)
+            print("G0 Z%s" % formatFloat(precision, args.zstart), file=out)
             print("G0 X0 Y0", file=out)
 
         print("G0 Z%s" % formatFloat(precision, args.zstart), file=out)

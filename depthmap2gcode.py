@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys
 import argparse
@@ -271,7 +271,8 @@ def buildDistanceMap(distance, surface, all_coords):
     while True:
         while not strata.get(next_stratum):
             next_stratum = next_stratum + 1
-            print("\x1B[1Gmapping distance... ", next_stratum, "  \x1B[1F")
+            if next_stratum % 100 == 0:
+                print("\x1B[1Gmapping distance... ", next_stratum, "  \x1B[1F")
             if next_stratum > max_stratum:
                 running = False
                 break
@@ -668,6 +669,7 @@ def generateCommands(target, state, padding, args, diameter, out):
         next_cut = z
 
     print("G0 Z%s F%s" % (formatFloat(args, args.zspace), formatFloat(args, args.feedrate)), file=out)
+    print("M3", file=out)
     print("G1 Z%s F%s" % (formatFloat(args, args.zspace), formatFloat(args, args.feedrate)), file=out)
 
     tool_shape = sorted(toolPixels(args, diameter), key=lambda p: p[0] * p[0] + p[1] * p[1])
@@ -685,6 +687,7 @@ def generateCommands(target, state, padding, args, diameter, out):
                 tool_shape=tool_shape, tool_edge=tool_edge)
 
     print("G0 Z%s" % formatFloat(args, args.zspace), file=out)
+    print("M5", file=out)
 
 
 def main():
@@ -782,7 +785,7 @@ def main():
         result.putpixel(p, (v, v, v))
 
     result = result.copy().img.transpose(Image.FLIP_LEFT_RIGHT)
-    result.show()
+    # result.show()
 
     if args.result:
         result.save(args.result)

@@ -9,7 +9,7 @@ NAME="$1"
 SIZE="${SIZE:-40}"
 PRECISION="${PRECISION:-0.05}"
 
-./depthmap2gcode.py --depth 3 --width "$SIZE" --height "$SIZE" --planes 1 --zspace 2 \
+./depthmap2gcode.py --depth 2.5 --width "$SIZE" --height "$SIZE" --planes 1 --zspace 2 \
   --cutdepth 3.2 --precision "$PRECISION" --tool 1.4:"$NAME"-background.g \
   --result "$NAME"-background-cut.png \
   "$NAME".png
@@ -20,7 +20,7 @@ convert "$NAME"-background-cut-mirror.png \
   -level 1%,2% -colors 2 \
   "$NAME"-background-cut-padded.png
 
-./depthmap2gcode.py --depth 3 --width "$SIZE" --height "$SIZE" --planes 1 --zspace 2 \
+./depthmap2gcode.py --depth 2.5 --width "$SIZE" --height "$SIZE" --planes 1 --zspace 2 \
   --cutdepth 3.2 --precision "$PRECISION" --tool 1.4:"$NAME"-foreground.g \
   --result "$NAME"-foreground-cut.png \
   --inverse "$NAME"-background-cut-padded.png
